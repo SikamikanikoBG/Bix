@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+hardware/enclosure/stl/asm_*.stl
+.DS_Store

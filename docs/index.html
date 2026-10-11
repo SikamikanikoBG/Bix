@@ -1,0 +1,1338 @@
+<!doctype html>
+<html lang="bg"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Bix Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Onest:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: workbench — 3D stage beside a control rail, then a live pipeline, transcript and minutes, then the spec sheet. */
+:root{
+  --bg:#eceff2; --surface:#ffffff; --sunk:#f4f6f8; --ink:#14181d; --muted:#5a6470; --line:#d4dae1;
+  --accent:#0d8486; --accent-ink:#ffffff; --signal:#c98a1f; --ok:#2a9257; --warn:#b97a10; --bad:#cc4238;
+  --stage-hi:#fbfcfd; --stage-lo:#dde3e8; --table:#8f99a3;
+  --f-display:"Unbounded","Onest",system-ui,sans-serif;
+  --f-body:"Onest",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0d1013; --surface:#151a1f; --sunk:#1b2127; --ink:#e6eaee; --muted:#8d97a3; --line:#28313a;
+  --accent:#3cc0be; --accent-ink:#06201f; --signal:#f0b44c; --ok:#4cc27d; --warn:#e8a83a; --bad:#f06a5f;
+  --stage-hi:#1d242b; --stage-lo:#0b0e11; --table:#2c333a; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0d1013; --surface:#151a1f; --sunk:#1b2127; --ink:#e6eaee; --muted:#8d97a3; --line:#28313a;
+  --accent:#3cc0be; --accent-ink:#06201f; --signal:#f0b44c; --ok:#4cc27d; --warn:#e8a83a; --bad:#f06a5f;
+  --stage-hi:#1d242b; --stage-lo:#0b0e11; --table:#2c333a; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.55}
+.wrap{max-width:1320px;margin:0 auto;padding-inline:20px;padding-block:22px 48px;display:flex;flex-direction:column;gap:22px}
+h1,h2,h3{font-family:var(--f-display);font-weight:600;text-wrap:balance;margin:0;letter-spacing:-.01em}
+h1{font-size:clamp(1.6rem,3.2vw,2.3rem);font-weight:700}
+h2{font-size:1.05rem}
+h3{font-size:.9rem}
+p{margin:0}
+.eyebrow{font-family:var(--f-mono);font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* header */
+.top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:14px}
+.top .lead{color:var(--muted);max-width:60ch;margin-top:6px}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{display:inline-flex;align-items:center;gap:7px;font-family:var(--f-mono);font-size:.74rem;padding:5px 10px;border:1px solid var(--line);border-radius:999px;background:var(--surface);white-space:nowrap}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--muted);flex:none}
+.dot.ok{background:var(--ok)} .dot.warn{background:var(--warn)} .dot.bad{background:var(--bad)} .dot.acc{background:var(--accent)}
+
+/* studio */
+.studio{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:16px;align-items:start}
+@media (max-width:980px){.studio{grid-template-columns:minmax(0,1fr)}}
+.stage{position:relative;border-radius:16px;overflow:hidden;aspect-ratio:16/10;max-width:100%;
+  background:radial-gradient(120% 90% at 50% 30%,var(--stage-hi),var(--stage-lo));border:1px solid var(--line)}
+@media (max-width:620px){.stage{aspect-ratio:4/5}}
+#gl{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:pan-y;cursor:grab}
+#gl:active{cursor:grabbing}
+.labels{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.lbl{position:absolute;left:0;top:0;font-size:.74rem;line-height:1.3;background:var(--surface);color:var(--ink);border:1px solid var(--line);
+  border-radius:8px;padding:5px 8px;white-space:nowrap;box-shadow:0 4px 14px rgba(0,0,0,.12);opacity:0;transition:opacity .25s}
+.lbl b{display:block;font-weight:600}
+.lbl small{color:var(--muted);font-family:var(--f-mono);font-size:.66rem}
+.lbl.show{opacity:1}
+.lbl.person{background:transparent;border:0;box-shadow:none;text-align:center;padding:0}
+.lbl.person b{font-size:.78rem}
+.lbl.person.talk b{color:var(--accent)}
+.overlay-tl{position:absolute;left:14px;top:12px;display:flex;flex-direction:column;gap:2px;pointer-events:none}
+.overlay-tl .eyebrow{font-size:.66rem}
+.toolbar{position:absolute;left:12px;right:12px;bottom:12px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;pointer-events:none}
+.toolbar>*{pointer-events:auto}
+.tb-group{display:flex;gap:6px;flex-wrap:wrap}
+.icon-btn,.btn{border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:7px 12px;cursor:pointer;font-size:.85rem;line-height:1.2}
+.icon-btn{width:36px;padding:7px 0;text-align:center;font-family:var(--f-mono)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
+.btn[aria-pressed="true"]{border-color:var(--bad);color:var(--bad)}
+.btn.primary[aria-pressed="true"]{color:var(--accent-ink)}
+.btn:hover,.icon-btn:hover{border-color:var(--accent)}
+
+/* control rail */
+.rail{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px;display:flex;flex-direction:column;gap:14px;min-width:0}
+.tabs{display:grid;grid-template-columns:1fr 1fr;background:var(--sunk);border-radius:10px;padding:3px;gap:3px}
+.tabs button{border:0;background:transparent;padding:7px;border-radius:8px;cursor:pointer;font-weight:500;color:var(--muted)}
+.tabs button[aria-selected="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.field{display:flex;flex-direction:column;gap:7px}
+.field>label,.field>.lab{font-size:.8rem;color:var(--muted);font-weight:500}
+.seg{display:flex;flex-wrap:wrap;gap:5px}
+.seg button{flex:1 1 auto;border:1px solid var(--line);background:var(--sunk);border-radius:8px;padding:6px 9px;cursor:pointer;font-size:.82rem;white-space:nowrap}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.swatches{display:flex;gap:8px}
+.sw{width:34px;height:34px;border-radius:50%;border:2px solid var(--line);cursor:pointer;padding:0}
+.sw[aria-pressed="true"]{border-color:var(--accent);box-shadow:0 0 0 3px var(--surface) inset}
+.hint{font-size:.78rem;color:var(--muted)}
+.warnbox{font-size:.8rem;border-left:3px solid var(--warn);padding:6px 10px;background:var(--sunk);border-radius:0 8px 8px 0}
+.switch{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:.88rem}
+.switch input{width:38px;height:22px;accent-color:var(--accent)}
+
+/* sim */
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:16px;min-width:0}
+.panel-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px}
+.panel-head .tb-group{align-items:center}
+.pipeline{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px;position:relative}
+@media (max-width:980px){.pipeline{grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media (max-width:560px){.pipeline{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.st{border:1px solid var(--line);border-radius:12px;padding:10px;background:var(--sunk);min-width:0;transition:border-color .2s,background .2s;position:relative}
+.st .n{font-family:var(--f-mono);font-size:.66rem;color:var(--muted)}
+.st b{display:block;font-size:.86rem;margin-top:2px}
+.st .sub{font-family:var(--f-mono);font-size:.68rem;color:var(--muted);margin-top:4px;overflow-wrap:anywhere}
+.st .where{font-size:.64rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-top:6px}
+.st.hot{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,var(--sunk))}
+.st.down{border-color:var(--bad)}
+.st.down .sub{color:var(--bad)}
+.st.fail{border-color:var(--warn)}
+.metrics{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin-top:12px}
+@media (max-width:760px){.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.metric{padding:8px 10px;border-radius:10px;border:1px dashed var(--line)}
+.metric span{display:block;font-size:.72rem;color:var(--muted)}
+.metric b{font-family:var(--f-mono);font-weight:500;font-size:.95rem;font-variant-numeric:tabular-nums}
+.duo{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:16px;margin-top:16px}
+@media (max-width:900px){.duo{grid-template-columns:minmax(0,1fr)}}
+.transcript{height:400px;overflow-y:auto;border:1px solid var(--line);border-radius:12px;padding:6px 12px;background:var(--sunk)}
+.tline{display:grid;grid-template-columns:44px minmax(0,1fr);gap:10px;padding:9px 0;border-bottom:1px solid var(--line)}
+.tline:last-child{border-bottom:0}
+.tline .tm{font-family:var(--f-mono);font-size:.72rem;color:var(--muted);padding-top:2px}
+.tline .who{font-weight:600;font-size:.84rem;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.tline .tag{font-family:var(--f-mono);font-size:.64rem;font-weight:400;color:var(--muted);border:1px solid var(--line);border-radius:6px;padding:1px 6px}
+.tline .tx{font-size:.92rem}
+.tline.partial .tx{color:var(--muted)}
+.tline.partial .tx::after{content:"▍";color:var(--accent);margin-left:2px}
+.tline.buffered .tx{font-family:var(--f-mono);font-size:.78rem;color:var(--warn)}
+.tline.sys .tx{font-family:var(--f-mono);font-size:.76rem;color:var(--muted)}
+.tline.bix .who{color:var(--signal)}
+.tline.wake .tx{background:color-mix(in srgb,var(--signal) 16%,transparent);border-radius:6px;padding:2px 6px;margin-left:-6px}
+.empty{color:var(--muted);font-size:.86rem;padding:18px 4px}
+.minutes{display:flex;flex-direction:column;gap:12px}
+.minutes h3{font-family:var(--f-mono);font-size:.7rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:500}
+.minutes ul{margin:6px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px}
+.minutes li{font-size:.9rem;padding:8px 10px;border-radius:10px;background:var(--sunk);display:grid;gap:2px}
+.minutes li .meta{font-family:var(--f-mono);font-size:.72rem;color:var(--muted)}
+.minutes li.new{animation:pop .5s ease}
+@keyframes pop{from{background:color-mix(in srgb,var(--accent) 30%,var(--sunk))}}
+.min-state{display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap}
+.foot{font-family:var(--f-mono);font-size:.72rem;color:var(--muted);border-top:1px solid var(--line);padding-top:10px}
+
+/* spec */
+.spec{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:16px}
+@media (max-width:900px){.spec{grid-template-columns:minmax(0,1fr)}}
+.tablebox{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:.88rem}
+th{text-align:left;font-family:var(--f-mono);font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:500;padding:6px 8px;border-bottom:1px solid var(--line)}
+td{padding:8px;border-bottom:1px solid var(--line);vertical-align:top}
+td:first-child{font-weight:600;white-space:nowrap}
+td small{color:var(--muted)}
+.checks{list-style:none;padding:0;margin:8px 0 0;display:flex;flex-direction:column;gap:7px}
+.checks li{display:grid;grid-template-columns:14px minmax(0,1fr);gap:9px;align-items:start;font-size:.88rem}
+.checks li .dot{margin-top:7px}
+.checks li small{display:block;color:var(--muted);font-size:.78rem}
+.ex{font-family:var(--f-mono);font-size:.64rem;color:var(--muted);border:1px solid var(--line);border-radius:6px;padding:1px 6px;margin-left:6px;vertical-align:2px}
+
+/* blueprint */
+.pagenav{display:flex;flex-wrap:wrap;gap:6px}
+.pagenav a{font-size:.82rem;color:var(--ink);text-decoration:none;border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:5px 12px}
+.pagenav a:hover{border-color:var(--accent)}
+.bp{display:flex;flex-direction:column;gap:16px}
+.bp-hero{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:16px;align-items:end}
+@media (max-width:900px){.bp-hero{grid-template-columns:minmax(0,1fr)}}
+.bp-hero p{color:var(--muted);max-width:62ch;margin-top:8px}
+.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+@media (max-width:560px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.kpi{border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:10px 12px;min-width:0}
+.kpi span{display:block;font-size:.72rem;color:var(--muted)}
+.kpi b{font-family:var(--f-mono);font-weight:500;font-size:1.1rem;font-variant-numeric:tabular-nums}
+.bp-toc{display:flex;flex-wrap:wrap;gap:6px;border-top:1px solid var(--line);padding-top:12px}
+.bp-toc a{font-family:var(--f-mono);font-size:.72rem;color:var(--muted);text-decoration:none;padding:3px 8px;border-radius:6px;border:1px solid var(--line)}
+.bp-toc a:hover{color:var(--ink);border-color:var(--accent)}
+.sec-n{font-family:var(--f-mono);font-size:.7rem;color:var(--accent);letter-spacing:.1em}
+.bp h2{font-size:1.15rem;margin:2px 0 4px}
+.bp .lede{color:var(--muted);font-size:.9rem;max-width:72ch}
+.bp-grid2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}
+@media (max-width:900px){.bp-grid2{grid-template-columns:minmax(0,1fr)}}
+.bom{min-width:760px}
+.bom td:first-child{white-space:normal;font-weight:600;min-width:150px}
+.bom td.num,.bom th.num{text-align:right;font-family:var(--f-mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+.bom tr.opt td{color:var(--muted)}
+.bom tr.off{display:none}
+.bom tfoot td{font-weight:600;border-bottom:0}
+.bom a{color:var(--accent)}
+.src{font-family:var(--f-mono);font-size:.66rem;border-radius:5px;padding:0 5px;margin-left:4px;white-space:nowrap}
+.src.v{color:var(--ok);border:1px solid color-mix(in srgb,var(--ok) 50%,transparent)}
+.src.e{color:var(--warn);border:1px dashed color-mix(in srgb,var(--warn) 60%,transparent)}
+.bom-ctl{display:flex;flex-wrap:wrap;gap:14px;align-items:center;margin:10px 0 6px}
+.bom-ctl .seg{flex-wrap:nowrap}
+.bom-ctl .seg button{flex:0 0 auto}
+.qty{display:flex;align-items:center;gap:6px;font-size:.82rem;color:var(--muted)}
+.qty input{width:64px;font:inherit;font-family:var(--f-mono);padding:5px 8px;border:1px solid var(--line);border-radius:8px;background:var(--sunk);color:var(--ink)}
+.callout{font-size:.84rem;border-left:3px solid var(--accent);padding:8px 12px;background:var(--sunk);border-radius:0 10px 10px 0}
+.callout.w{border-left-color:var(--warn)}
+.parts-stage{position:relative;border-radius:14px;overflow:hidden;aspect-ratio:4/3;max-width:100%;background:radial-gradient(120% 90% at 50% 30%,var(--stage-hi),var(--stage-lo));border:1px solid var(--line)}
+@media (max-width:620px){.parts-stage{aspect-ratio:1/1}}
+.plist td:nth-child(2){white-space:nowrap}
+#bp-gl{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:pan-y;cursor:grab}
+.parts-stage .toolbar{justify-content:flex-start}
+.parts-stage .msg{position:absolute;inset:auto 14px 56px 14px;font-size:.82rem;color:var(--muted)}
+.dimtag{position:absolute;left:14px;top:12px;font-family:var(--f-mono);font-size:.7rem;color:var(--muted);pointer-events:none}
+.plist td:first-child{font-family:var(--f-mono);font-size:.78rem;font-weight:500}
+.plist tr{cursor:pointer}
+.plist tr.sel td{background:color-mix(in srgb,var(--accent) 12%,transparent)}
+.settings{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-top:10px}
+.settings div{border:1px dashed var(--line);border-radius:10px;padding:7px 10px;font-size:.82rem}
+.settings span{display:block;font-size:.7rem;color:var(--muted)}
+.svgbox{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--sunk)}
+.svgbox svg{display:block;min-width:760px;width:100%;height:auto}
+.wire text{font-family:var(--f-body);fill:var(--ink);font-size:12px}
+.wire .sm{font-family:var(--f-mono);fill:var(--muted);font-size:10px}
+.wire .bx{fill:var(--surface);stroke:var(--line);stroke-width:1.2}
+.wire .bx.k{stroke:var(--accent);stroke-width:1.6}
+.wire .w{fill:none;stroke-width:2.2;stroke-linecap:round}
+.wire .pw{stroke:var(--bad)} .wire .dt{stroke:var(--accent)} .wire .au{stroke:var(--signal)} .wire .nt{stroke:var(--ok)}
+.legend{display:flex;flex-wrap:wrap;gap:12px;font-size:.78rem;color:var(--muted);margin-top:8px}
+.legend i{display:inline-block;width:18px;height:3px;border-radius:2px;vertical-align:middle;margin-right:5px}
+.pins td{font-family:var(--f-mono);font-size:.78rem}
+.pins td:first-child{font-family:var(--f-body);font-size:.86rem}
+.steps{list-style:none;counter-reset:s;margin:10px 0 0;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px}
+.steps li{counter-increment:s;border:1px solid var(--line);border-radius:12px;padding:10px 12px 10px 44px;position:relative;font-size:.87rem;background:var(--surface)}
+.steps li::before{content:counter(s,decimal-leading-zero);position:absolute;left:12px;top:10px;font-family:var(--f-mono);font-size:.78rem;color:var(--accent)}
+.steps li b{display:block;font-size:.88rem;margin-bottom:2px}
+.steps li small{color:var(--muted);display:block;margin-top:4px;font-family:var(--f-mono);font-size:.7rem}
+pre.code{margin:8px 0 0;background:var(--sunk);border:1px solid var(--line);border-radius:10px;padding:10px 12px;overflow-x:auto;font-family:var(--f-mono);font-size:.76rem;line-height:1.5;color:var(--ink)}
+.svc{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:8px;margin-top:10px}
+.svc div{border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:var(--sunk);min-width:0}
+.svc b{font-family:var(--f-mono);font-size:.78rem;font-weight:500;color:var(--accent)}
+.svc p{font-size:.82rem;color:var(--muted);margin-top:2px}
+.cost td.num{text-align:right;font-family:var(--f-mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+.road{display:flex;flex-direction:column;gap:0;margin-top:10px}
+.ph{display:grid;grid-template-columns:120px minmax(0,1fr) 120px;gap:14px;padding:12px 0;border-top:1px solid var(--line)}
+@media (max-width:640px){.ph{grid-template-columns:minmax(0,1fr)}}
+.ph .when{font-family:var(--f-mono);font-size:.76rem;color:var(--muted)}
+.ph .when b{display:block;color:var(--accent);font-size:.8rem}
+.ph ul{margin:4px 0 0;padding-left:18px;font-size:.86rem}
+.ph .gate{font-size:.78rem;color:var(--muted);margin-top:6px}
+.ph .gate b{color:var(--ink);font-weight:600}
+.ph .money{font-family:var(--f-mono);font-size:.82rem;text-align:right}
+@media (max-width:640px){.ph .money{text-align:left}}
+.ph .money small{display:block;color:var(--muted);font-size:.68rem}
+.comp li{grid-template-columns:14px minmax(0,1fr)}
+.bp a{color:var(--accent)}
+.parts-stage .btn[aria-pressed="true"]{border-color:var(--accent);color:var(--accent)}
+@media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <div class="eyebrow">Bix · офисен робот за срещи · концепция v2</div>
+      <h1>Bix Studio</h1>
+      <p class="lead">Разгледайте устройството в 3D, сменете формата и материала, отворете го, за да видите какво има вътре, и пуснете симулация на среща от звука до готовите минути.</p>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-end">
+    <nav class="pagenav" aria-label="Раздели"><a href="#stage">Студио</a><a href="#sim-h">Симулация</a><a href="#blueprint">Blueprint</a></nav>
+    <div class="chips" aria-live="polite">
+      <span class="chip"><span class="dot ok" id="c-net-dot"></span><span id="c-net">PoE · онлайн</span></span>
+      <span class="chip"><span class="dot" id="c-rec-dot"></span><span id="c-rec">Не записва</span></span>
+      <span class="chip"><span class="dot acc"></span><span id="c-cloud">Облак: ЕС · Франкфурт</span></span>
+    </div></div>
+  </header>
+
+  <section class="studio">
+    <div class="stage" id="stage">
+      <canvas id="gl" aria-label="3D модел на Bix. Плъзнете, за да го завъртите."></canvas>
+      <div class="labels" id="labels"></div>
+      <div class="overlay-tl">
+        <span class="eyebrow" id="stage-title">Студио · MINT</span>
+        <span class="hint">Плъзнете, за да завъртите</span>
+      </div>
+      <div class="toolbar">
+        <div class="tb-group">
+          <button class="icon-btn" id="zin" aria-label="Приближи">+</button>
+          <button class="icon-btn" id="zout" aria-label="Отдалечи">−</button>
+          <button class="btn" id="explode" aria-pressed="false">Разглоби</button>
+          <button class="btn" id="scene-btn">Заседателна зала</button>
+        </div>
+        <button class="btn primary" id="stage-play">Пусни симулация на среща</button>
+      </div>
+    </div>
+
+    <aside class="rail">
+      <div class="tabs" role="tablist">
+        <button role="tab" aria-selected="true" id="tab-d" aria-controls="pane-d">Дизайн</button>
+        <button role="tab" aria-selected="false" id="tab-c" aria-controls="pane-c">Организация</button>
+      </div>
+
+      <div id="pane-d" role="tabpanel" aria-labelledby="tab-d" style="display:flex;flex-direction:column;gap:14px">
+        <div class="field"><span class="lab">Форма</span>
+          <div class="seg" data-key="form">
+            <button data-v="mint" aria-pressed="false">MINT</button><button data-v="crt" aria-pressed="true">CRT</button><button data-v="orb" aria-pressed="false">ORB</button>
+          </div>
+          <p class="hint" id="form-hint"></p>
+        </div>
+        <div class="field"><span class="lab">Материал на корпуса</span>
+          <div class="seg" data-key="material">
+            <button data-v="matte" aria-pressed="true">Матов PC/ABS</button><button data-v="alu" aria-pressed="false">Алуминий</button><button data-v="fabric" aria-pressed="false">Текстил</button>
+          </div>
+        </div>
+        <div class="field"><span class="lab">Цвят · <span id="color-name">Графит</span></span>
+          <div class="swatches" data-key="color">
+            <button class="sw" data-v="graphite" aria-pressed="true" aria-label="Графит" style="background:#2d3238"></button>
+            <button class="sw" data-v="white" aria-pressed="false" aria-label="Бял" style="background:#e6e8ea"></button>
+            <button class="sw" data-v="sand" aria-pressed="false" aria-label="Пясък" style="background:#c9b99c"></button>
+            <button class="sw" data-v="navy" aria-pressed="false" aria-label="Тъмносин" style="background:#22364f"></button>
+          </div>
+        </div>
+        <div class="field"><span class="lab">Какво показва дисплеят</span>
+          <div class="seg" data-key="face">
+            <button data-v="eyes" aria-pressed="true">Очи</button><button data-v="status" aria-pressed="false">Статус на записа</button>
+          </div>
+        </div>
+        <label class="switch" for="autorot">Автоматично въртене <input type="checkbox" id="autorot" checked></label>
+        <div class="warnbox" id="mat-warn" hidden></div>
+      </div>
+
+      <div id="pane-c" role="tabpanel" aria-labelledby="tab-c" hidden style="display:flex;flex-direction:column;gap:14px">
+        <div class="field"><span class="lab">Свързаност</span>
+          <div class="seg" data-key="conn">
+            <button data-v="poe" aria-pressed="true">Ethernet PoE+</button><button data-v="wifi" aria-pressed="false">Wi-Fi 6</button><button data-v="lte" aria-pressed="false">Wi-Fi + LTE</button>
+          </div>
+          <p class="hint" id="conn-hint"></p>
+        </div>
+        <div class="field"><span class="lab">Къде се обработват данните</span>
+          <div class="seg" data-key="region">
+            <button data-v="fra" aria-pressed="true">ЕС · Франкфурт</button><button data-v="ams" aria-pressed="false">ЕС · Амстердам</button><button data-v="private" aria-pressed="false">Частен облак</button>
+          </div>
+        </div>
+        <div class="field"><span class="lab">Задържане на записите</span>
+          <div class="seg" data-key="retention">
+            <button data-v="30" aria-pressed="false">30 дни</button><button data-v="90" aria-pressed="true">90 дни</button><button data-v="365" aria-pressed="false">1 година</button>
+          </div>
+        </div>
+        <div class="field"><span class="lab">Как се разпознават говорещите</span>
+          <div class="seg" data-key="speakerId">
+            <button data-v="calendar" aria-pressed="true">Календар + посока</button><button data-v="voice" aria-pressed="false">Гласови профили</button><button data-v="anon" aria-pressed="false">Анонимно</button>
+          </div>
+          <p class="hint" id="spk-hint"></p>
+        </div>
+      </div>
+    </aside>
+  </section>
+
+  <section class="panel" aria-labelledby="sim-h">
+    <div class="panel-head">
+      <div>
+        <div class="eyebrow">Симулация</div>
+        <h2 id="sim-h">Как минава една среща през Bix</h2>
+      </div>
+      <div class="tb-group">
+        <button class="btn primary" id="play">Пусни</button>
+        <button class="btn" id="restart">Отначало</button>
+        <div class="seg" data-key="speed" style="min-width:150px">
+          <button data-v="1" aria-pressed="true">1×</button><button data-v="2" aria-pressed="false">2×</button><button data-v="4" aria-pressed="false">4×</button>
+        </div>
+        <button class="btn" id="mute" aria-pressed="false">Изключи микрофоните</button>
+        <button class="btn" id="netdrop" aria-pressed="false">Прекъсни мрежата</button>
+      </div>
+    </div>
+
+    <div class="pipeline" id="pipeline"></div>
+    <div class="metrics">
+      <div class="metric"><span>Време на срещата</span><b id="m-time">00:00</b></div>
+      <div class="metric"><span>Изпратени към облака</span><b id="m-data">0 KB</b></div>
+      <div class="metric"><span>Закъснение реч → текст</span><b id="m-lat">—</b></div>
+      <div class="metric"><span>Локален буфер</span><b id="m-buf">0 s</b></div>
+      <div class="metric"><span>Мрежа</span><b id="m-net">PoE · 1 Gb/s</b></div>
+    </div>
+
+    <div class="duo">
+      <div>
+        <div class="min-state" style="margin-bottom:8px"><h2>Транскрипция на живо</h2><span class="hint">Пример с измислени участници</span></div>
+        <div class="transcript" id="transcript" aria-live="polite"><p class="empty">Натиснете „Пусни“. Bix ще засече присъствие, Мария ще стартира срещата с допир и четирима участници ще говорят около масата.</p></div>
+      </div>
+      <div class="minutes" id="minutes">
+        <div class="min-state"><h2 id="min-title">Минути</h2><span class="chip" id="min-chip"><span class="dot"></span>Чакат среща</span></div>
+        <div id="min-body"><p class="empty">Решенията и задачите се появяват тук веднага щом бъдат казани, още по време на срещата.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="spec">
+    <div class="panel">
+      <div class="eyebrow">Спецификация · обновява се според избора</div>
+      <h2 style="margin:4px 0 10px">Какво има в устройството</h2>
+      <div class="tablebox"><table><thead><tr><th>Компонент</th><th>Избор</th><th>Защо</th></tr></thead><tbody id="bom"></tbody></table></div>
+    </div>
+    <div class="panel">
+      <div class="eyebrow">Корпоративна готовност</div>
+      <h2 style="margin:4px 0 0">Проверка спрямо настройките</h2>
+      <ul class="checks" id="checks"></ul>
+      <h3 style="margin-top:18px">Флот от устройства <span class="ex">пример</span></h3>
+      <div class="tablebox"><table style="margin-top:6px"><thead><tr><th>Зала</th><th>Състояние</th><th>Фърмуер</th></tr></thead>
+        <tbody>
+          <tr><td>София · Витоша</td><td><span class="dot ok" style="display:inline-block"></span> онлайн</td><td class="mono">1.4.2</td></tr>
+          <tr><td>Пловдив · Зала 2</td><td><span class="dot acc" style="display:inline-block"></span> обновява се</td><td class="mono">1.4.1 → 1.4.2</td></tr>
+          <tr><td>Варна · Морска</td><td><span class="dot warn" style="display:inline-block"></span> без връзка 2 ч.</td><td class="mono">1.4.2</td></tr>
+        </tbody></table></div>
+    </div>
+  </section>
+
+  <section class="bp" id="blueprint" aria-labelledby="bp-h">
+    <div class="panel">
+      <div class="bp-hero">
+        <div>
+          <div class="eyebrow">Blueprint · Bix CRT · ревизия 0.1 · 10.10.2026</div>
+          <h2 id="bp-h" style="font-size:clamp(1.3rem,2.4vw,1.8rem);margin-top:6px">От нулата до старт</h2>
+          <p>Това е всичко за един работещ прототип и пилот в офис. Вътре има части с цени от България или най-евтиния доставчик в ЕС, файлове за 3D печат, схема на свързване, сглобяване, софтуер, облак, съответствие с регулациите и план с бюджет. Цените са в евро с ДДС (България е в еврозоната от 1.01.2026).</p>
+        </div>
+        <div class="kpis">
+          <div class="kpi"><span>Части за 1 брой</span><b id="k-unit">—</b></div>
+          <div class="kpi"><span>Пластмаса</span><b>≈ 690 г</b></div>
+          <div class="kpi"><span>Време за печат</span><b>≈ 27 ч</b></div>
+          <div class="kpi"><span>Облак за 1 ч среща</span><b>€0,2–1,0</b></div>
+        </div>
+      </div>
+      <nav class="bp-toc" aria-label="Съдържание на blueprint">
+        <a href="#bp-bom">01 Части</a><a href="#bp-print">02 3D печат</a><a href="#bp-wire">03 Свързване</a><a href="#bp-asm">04 Сглобяване</a>
+        <a href="#bp-sw">05 Софтуер</a><a href="#bp-cloud">06 Облак</a><a href="#bp-comp">07 Регулации</a><a href="#bp-road">08 План и бюджет</a><a href="#bp-risk">09 Рискове</a>
+      </nav>
+    </div>
+
+    <!-- 01 BOM -->
+    <div class="panel" id="bp-bom">
+      <div class="sec-n">01</div>
+      <h2>Части и цени</h2>
+      <p class="lede">Колоната „Взимаме“ е цената, с която се смята сумата. Означенията: <span class="src v">проверено</span> е цена от сайта на магазина към 10.10.2026; <span class="src e">оценка</span> е типична пазарна цена, която не е проверена в конкретен магазин.</p>
+      <div class="bom-ctl">
+        <div class="field"><span class="lab hint">Захранване</span><div class="seg" data-bp="power"><button data-v="poe" aria-pressed="true">PoE+</button><button data-v="usb" aria-pressed="false">USB-C 27 W</button></div></div>
+        <div class="field"><span class="lab hint">Резервна мобилна връзка</span><div class="seg" data-bp="lte"><button data-v="no" aria-pressed="true">Без LTE</button><button data-v="yes" aria-pressed="false">С LTE</button></div></div>
+        <label class="qty">Брой устройства <input id="bp-qty" type="number" min="1" max="500" value="1" inputmode="numeric"></label>
+      </div>
+      <div class="tablebox"><table class="bom">
+        <thead><tr><th>Част</th><th class="num">Бр.</th><th>България</th><th>Най-евтино в чужбина</th><th class="num">Взимаме</th><th class="num">Сума</th></tr></thead>
+        <tbody id="bp-rows"></tbody>
+        <tfoot><tr><td colspan="5">Общо за <span id="bp-qn">1</span> бр.</td><td class="num" id="bp-total">—</td></tr>
+        <tr><td colspan="5" style="font-weight:400"><small>На брой</small></td><td class="num" style="font-weight:400" id="bp-per">—</td></tr></tfoot>
+      </table></div>
+      <div class="bp-grid2" style="margin-top:12px">
+        <div class="callout"><b>Промени спрямо първата версия.</b>
+          <ul style="margin:4px 0 0;padding-left:18px">
+            <li><b>Pi 5 с 2 GB вместо 4 GB.</b> Разпознаването на реч и езиковият модел работят в облака, така че 2 GB стигат. Спестява ~€54 на брой при днешните цени (паметта поскъпна три пъти през 2026).</li>
+            <li><b>XVF3800 вместо XVF3800.</b> Масивът е по-нов и по-евтин и вече има 12 RGB светодиода, бутон Mute и усилвател за говорител. Отпадат отделните LED пръстен, бутон и усилвател.</li>
+          </ul></div>
+        <div class="callout w"><b>Какво не е включено в сумата</b>
+          <ul style="margin:4px 0 0;padding-left:18px">
+            <li>Доставка.</li>
+            <li>PoE+ инжектор (≈ €25), ако в залата няма PoE суич.</li>
+            <li>3D принтер, ако нямате.</li>
+            <li>Поялник с накрайник за месингови втулки.</li>
+          </ul>
+          Масивът от Великобритания минава през митница: при внос плащате ДДС 20% и такса за обработка.</div>
+      </div>
+    </div>
+
+    <!-- 02 Print -->
+    <div class="panel" id="bp-print">
+      <div class="sec-n">02</div>
+      <h2>Корпус за 3D печат</h2>
+      <p class="lede">Корпусът има 6 части. Генерират се от параметричен Python скрипт (manifold3d), който е в пакета със STL файловете. Ако реална платка се различава от чертежа, сменяте числото в скрипта и пускате генерирането наново.</p>
+      <div class="bp-grid2" style="margin-top:12px">
+        <div class="parts-stage" id="bp-stage">
+          <canvas id="bp-gl" aria-label="3D преглед на частите за печат"></canvas>
+          <div class="dimtag" id="bp-dim">214 × 176 × 154 мм в сглобен вид</div>
+          <div class="msg" id="bp-msg">Зареждам STL файловете…</div>
+          <div class="toolbar"><div class="tb-group">
+            <button class="btn" id="bp-ex" aria-pressed="false">Разглоби</button>
+            <button class="btn" id="bp-int" aria-pressed="true">Платки вътре</button>
+            <button class="btn" id="bp-xr" aria-pressed="false">Рентген</button>
+          </div></div>
+        </div>
+        <div style="min-width:0">
+          <div class="tablebox"><table class="plist">
+            <thead><tr><th>Файл</th><th>Размер, мм</th><th>Цвят</th><th class="num">≈ г</th><th class="num">≈ ч</th></tr></thead>
+            <tbody id="bp-parts"></tbody>
+          </table></div>
+          <p class="hint" style="margin-top:6px">Изберете ред, за да видите частта. Скобите се печатат по 4 броя.</p>
+          <div class="settings">
+            <div><span>Материал</span>PETG; капакът е от прозрачен (natural) PETG, за да свети пръстенът</div>
+            <div><span>Слой / стени</span>0,2 мм · 4 периметъра · 5 горни и долни слоя</div>
+            <div><span>Пълнеж</span>20% gyroid</div>
+            <div><span>Температури</span>240 °C дюза · 80 °C легло</div>
+            <div><span>Легло</span>поне 220 × 220 мм; тялото заема 214 × 176</div>
+            <div><span>Поддръжки</span>само за горния отвор на тялото (мост 114 мм)</div>
+          </div>
+          <div class="callout w" style="margin-top:10px"><b>Преди печат проверете с шублер.</b> Параметрите с ТОДО в скрипта са:
+            <ul style="margin:4px 0 0;padding-left:18px">
+              <li>позицията на бутона Mute на XVF3800, като я вземете от STEP файла на Seeed;</li>
+              <li>дълбочината на гнездото на масива;</li>
+              <li>отместването на видимата площ на дисплея;</li>
+              <li>височината на стойките за скобите.</li>
+            </ul>
+            За серия PETG не е достатъчен. Корпусът трябва да е огнеустойчив (UL94 V-0, например PC/ABS FR), отлят под налягане или печатан по SLS.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 03 Wiring -->
+    <div class="panel" id="bp-wire">
+      <div class="sec-n">03</div>
+      <h2>Схема на свързване</h2>
+      <p class="lede">Устройството няма захранващ блок. Един Ethernet кабел носи мрежата и 25,5 W. Всичко останало се захранва от PoE HAT-а през 40-пиновия хедър, който има проходни пинове.</p>
+      <div class="svgbox" style="margin-top:10px">
+        <svg class="wire" viewBox="0 0 960 430" role="img" aria-label="Схема на свързване на Bix CRT">
+          <!-- wires -->
+          <path class="w nt" d="M170 78 H250"/><path class="w nt" d="M384 78 H420 V170"/>
+          <path class="w pw" d="M510 140 V170"/>
+          <path class="w dt" d="M600 205 H660 V80 H700"/>
+          <path class="w pw" d="M600 222 H675 V100 H700"/>
+          <path class="w dt" d="M600 250 H700"/>
+          <path class="w au" d="M860 250 H880 V330 H860"/>
+          <path class="w dt" d="M600 280 H640 V380 H700"/>
+          <path class="w pw" d="M600 292 H628 V398 H700"/>
+          <path class="w dt" d="M440 300 V340"/>
+          <path class="w dt" d="M410 300 V345 H300"/>
+          <!-- boxes -->
+          <rect class="bx" x="14" y="48" width="156" height="60" rx="10"/><text x="28" y="72">Мрежов PoE+ суич</text><text class="sm" x="28" y="90">802.3at · 802.1X · VLAN</text>
+          <rect class="bx" x="250" y="48" width="134" height="60" rx="10"/><text x="264" y="72">RJ45 keystone</text><text class="sm" x="264" y="90">в задния панел</text>
+          <rect class="bx" x="430" y="88" width="180" height="52" rx="10"/><text x="444" y="110">PoE+ HAT (F)</text><text class="sm" x="444" y="127">5 V · 4,5 A · вентилатор</text>
+          <rect class="bx k" x="400" y="170" width="200" height="130" rx="12"/><text x="416" y="194" style="font-weight:600">Raspberry Pi 5 · 2 GB</text>
+          <text class="sm" x="416" y="212">DSI1 ─ дисплей</text><text class="sm" x="416" y="228">GPIO 2/6 ─ 5 V дисплей</text><text class="sm" x="416" y="254">USB 3 ─ микрофони</text>
+          <text class="sm" x="416" y="282">UART0 GPIO14/15 ─ радар</text>
+          <rect class="bx" x="700" y="48" width="214" height="66" rx="10"/><text x="714" y="72">Touch Display 2 · 7″</text><text class="sm" x="714" y="90">FFC 22→15 · 720×1280</text><text class="sm" x="714" y="104">хоризонтално, завъртян 90°</text>
+          <rect class="bx k" x="700" y="222" width="160" height="66" rx="10"/><text x="714" y="246">reSpeaker XVF3800</text><text class="sm" x="714" y="264">USB Audio 2.0 · 16 kHz</text><text class="sm" x="714" y="278">12 LED · Mute · AEC</text>
+          <rect class="bx" x="730" y="312" width="130" height="40" rx="10"/><text x="744" y="337">Говорител 3 W</text>
+          <rect class="bx" x="700" y="362" width="160" height="50" rx="10"/><text x="714" y="384">mmWave LD2410C</text><text class="sm" x="714" y="400">24 GHz · UART 256000</text>
+          <rect class="bx" x="380" y="340" width="130" height="50" rx="10"/><text x="394" y="362">ATECC608</text><text class="sm" x="394" y="378">I2C 0x60 · ключ</text>
+          <rect class="bx" x="170" y="320" width="130" height="50" rx="10"/><text x="184" y="342">microSD 32 GB</text><text class="sm" x="184" y="358">LUKS · A/B дялове</text>
+          <text class="sm" x="176" y="128">данни + 25,5 W</text>
+          <text class="sm" x="870" y="292">JST</text>
+        </svg>
+      </div>
+      <div class="legend"><span><i style="background:var(--ok)"></i>мрежа + PoE</span><span><i style="background:var(--bad)"></i>захранване 5 V</span><span><i style="background:var(--accent)"></i>данни</span><span><i style="background:var(--signal)"></i>звук</span></div>
+      <div class="bp-grid2" style="margin-top:12px">
+        <div class="tablebox"><table class="pins">
+          <thead><tr><th>Връзка</th><th>Пин на Pi (физически)</th><th>Към</th></tr></thead>
+          <tbody>
+            <tr><td>Дисплей · захранване</td><td>2 (5 V) · 6 (GND)</td><td>J1 на дисплея, червен/черен</td></tr>
+            <tr><td>Радар · захранване</td><td>4 (5 V) · 9 (GND)</td><td>VCC · GND</td></tr>
+            <tr><td>Радар · данни</td><td>8 (TXD) · 10 (RXD)</td><td>RX · TX (3,3 V логика)</td></tr>
+            <tr><td>ATECC608</td><td>1 (3V3) · 3 (SDA) · 5 (SCL) · 14 (GND)</td><td>STEMMA QT кабел</td></tr>
+            <tr><td>Дисплей · картина</td><td>DSI1 (22-пинов)</td><td>FFC 22→15 от комплекта</td></tr>
+            <tr><td>Микрофони</td><td>USB 3 (син)</td><td>USB-C на XVF3800</td></tr>
+          </tbody></table></div>
+        <div class="callout"><b>Енергиен бюджет: под 15 W при 25,5 W налични.</b>
+          <ul style="margin:4px 0 0;padding-left:18px">
+            <li>Pi 5 консумира ≈ 3–7 W, дисплеят ≈ 2–3 W, масивът и светодиодите ≈ 1–2 W, говорителят до 3 W на пик.</li>
+            <li>Светлината на пръстена е ограничена в софтуера до 25%.</li>
+          </ul>
+          Вентилаторът на HAT-а е близо до микрофоните. AEC не маха шума от него, а шумопотискането само го намалява. Затова в <span class="mono">config.txt</span> вентилаторът е настроен да тръгва над 70 °C.</div>
+      </div>
+    </div>
+
+    <!-- 04 Assembly -->
+    <div class="panel" id="bp-asm">
+      <div class="sec-n">04</div>
+      <h2>Сглобяване</h2>
+      <p class="lede">Отнема около 90 минути на брой. Нужни са поялник (230 °C за втулките), шублер, отвертки PH1 и PH0 и двустранно лепяща лента.</p>
+      <ol class="steps">
+        <li><b>Втулки</b>Натиснете с поялник 10 месингови втулки M3: по 4 в горните и в долните релси на тялото и 2 в блоковете на рамката.<small>отвор Ø4,0 · втулка M3 × 5,7</small></li>
+        <li><b>Дисплей в рамката</b>Стъклото ляга в центриращата рамка. Закрепете го с 4 печатни скоби и винтове M2.5 × 6.<small>bix_crt_display_clamp × 4</small></li>
+        <li><b>Pi 5 на дисплея</b>Pi стъпва на 4-те стойки отзад на дисплея (M2.5). Свържете FFC кабела 22→15 към DSI1. Поставете топлинната лента и радиатора.</li>
+        <li><b>PoE HAT</b>Сложете HAT-а върху Pi с дистанционерите от комплекта. Захранването на дисплея (пинове 2 и 6) отива на проходния хедър.</li>
+        <li><b>Радар</b>LD2410C влиза в гнездото под дисплея с двустранно лепило. Свържете 4 проводника към пинове 4, 9, 8 и 10.<small>през 1,2 мм пластмаса · без метал отпред</small></li>
+        <li><b>Защитен чип</b>ATECC608 се свързва с STEMMA QT кабел към I2C. Залепете го до Pi.</li>
+        <li><b>Микрофони в капака</b>XVF3800 влиза в гнездото със светодиодите нагоре и се закрепва с 4 ъглови скоби. Говорителят се свързва към JST изхода на масива.<small>bix_crt_xvf_clamp × 4</small></li>
+        <li><b>Говорител</b>Говорителят Ø40 се лепи в пръстена на дясната стена с B-7000 или горещо лепило.</li>
+        <li><b>Мрежа</b>Щракнете keystone гнездото в задния панел. Пач кабел 15 см свързва keystone-а с RJ45 на Pi. USB кабелът отива от Pi към масива.</li>
+        <li><b>Затваряне</b>Рамката влиза в тялото и се закрепва с 2 винта M3 × 10 отдолу. Капакът се закрепва с 4 винта M3 × 8 с потъваща глава.</li>
+        <li><b>Основа</b>Закрепете основата с 4 винта M3 × 16 и сложете гумените крачета Ø10.</li>
+        <li><b>Първо пускане</b>Включете кабела в PoE+ порт. Устройството показва QR код за провизиране, а на шкафа се залепва етикет със серийния номер.</li>
+      </ol>
+    </div>
+
+    <!-- 05 Software -->
+    <div class="panel" id="bp-sw">
+      <div class="sec-n">05</div>
+      <h2>Софтуер на устройството</h2>
+      <p class="lede">Работи под Raspberry Pi OS Lite 64-bit без десктоп. Софтуерът е разделен на услуги в systemd, по една за всяка задача. Ако една падне, останалите продължават да работят.</p>
+      <div class="svc">
+        <div><b>bix-audio</b><p>Чете обработения канал от XVF3800 (ALSA, 16 kHz). Silero VAD отрязва тишината.</p></div>
+        <div><b>bix-wake</b><p>openWakeWord с модел, обучен на „Бикс“. Слуша локално и нищо не праща, преди да е стартирана среща.</p></div>
+        <div><b>bix-uplink</b><p>Компресира с Opus 24 kbps. Праща през WebSocket с mTLS. Пръстеновият буфер побира до 2 ч на диска.</p></div>
+        <div><b>bix-mqtt</b><p>Пази връзка с IoT шлюза: команди, телеметрия, OTA задачи. Сертификатът на устройството е в ATECC608.</p></div>
+        <div><b>bix-ui</b><p>Лицето и статусът. SDL2 върху KMS, без браузър, което пази около 300 MB RAM.</p></div>
+        <div><b>bix-presence</b><p>Чете радара по UART. Когато има хора, екранът се събужда. Когато няма никого 10 мин, срещата приключва.</p></div>
+        <div><b>bix-leds</b><p>Пръстенът свети към говорещия по ъгъла (DoA) от масива. Червено означава Mute.</p></div>
+        <div><b>bix-ota</b><p>RAUC с A/B дялове и подписани пакети. Ако новата версия не тръгне, устройството се връща към старата.</p></div>
+      </div>
+      <div class="bp-grid2" style="margin-top:12px">
+        <div style="min-width:0">
+          <h3>Защита на устройството</h3>
+          <ul style="margin:6px 0 0;padding-left:18px;font-size:.87rem">
+            <li>Подписан boot на Pi 5: ключът е записан в OTP, а EEPROM-ът е заключен.</li>
+            <li>Цял диск с LUKS2. Ключът се развива от защитения чип, така че карта, извадена от устройството, не се чете.</li>
+            <li>Няма SSH в продукционния образ и няма общи пароли. Всяко устройство има собствен сертификат.</li>
+            <li>Защитна стена: само изходящи 443 и 8883 и DNS към корпоративния резолвер.</li>
+          </ul>
+        </div>
+        <div style="min-width:0">
+          <h3>Ядро на аудио пътя</h3>
+<pre class="code">mic = alsa.capture("hw:XVF3800", rate=16000, ch=1)
+for frame in mic.frames(ms=20):
+    if not meeting.active:
+        wake.feed(frame); continue
+    if vad.is_speech(frame) or vad.hangover():
+        pkt = opus.encode(frame, bitrate=24000)
+        buf.append(pkt, ts=frame.ts)     # пази до 2 ч
+uplink.drain(buf)                         # mTLS, при връзка</pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- 06 Cloud -->
+    <div class="panel" id="bp-cloud">
+      <div class="sec-n">06</div>
+      <h2>Облак</h2>
+      <p class="lede">Референтната архитектура е в AWS eu-central-1 (Франкфурт). Същото може да се построи в Azure Germany West Central. Данните не напускат ЕС.</p>
+      <div class="svc">
+        <div><b>IoT Core</b><p>Регистрира устройствата по сертификат, групира ги по зали, пуска OTA задачи и следи телеметрията.</p></div>
+        <div><b>Приемане на звук</b><p>Контейнер в ECS Fargate приема WebSocket с mTLS и подава потока на разпознаването на реч.</p></div>
+        <div><b>Реч → текст</b><p>Azure Speech или Google Chirp за bg-BG. Кой е по-добър се решава с тест върху ваши записи, не с маркетинг.</p></div>
+        <div><b>Минути</b><p>Езиков модел (Claude през Bedrock в ЕС) прави решения, задачи и въпроси. Всяко твърдение има препратка към ред от транскрипцията.</p></div>
+        <div><b>Хранилище</b><p>S3 с криптиране и KMS ключ на клиента. Записите се трият автоматично след 30, 90 или 365 дни.</p></div>
+        <div><b>Интеграции</b><p>Microsoft Graph или Google Workspace: календар за имената, имейл и Teams за минутите.</p></div>
+      </div>
+      <div class="tablebox" style="margin-top:12px"><table class="cost">
+        <thead><tr><th>Разход за 1 час среща</th><th class="num">На живо</th><th class="num">След срещата</th><th>Основа</th></tr></thead>
+        <tbody>
+          <tr><td>Реч → текст</td><td class="num">$0,96</td><td class="num">$0,18</td><td><small>Google STT v2: $0,016/мин стандартно, $0,003/мин dynamic batch <span class="src v">проверено</span></small></td></tr>
+          <tr><td>IoT съобщения</td><td class="num">$0,004</td><td class="num">$0,004</td><td><small>AWS IoT Core: $1 за милион съобщения по 5 KB; Opus 24 kbps ≈ 1 съобщ./с <span class="src v">проверено</span></small></td></tr>
+          <tr><td>Езиков модел</td><td class="num">€0,05–0,20</td><td class="num">€0,05–0,20</td><td><small>~25 хил. токена транскрипция и ~2 хил. изход, според модела <span class="src e">оценка</span></small></td></tr>
+          <tr><td>Съхранение и пренос</td><td class="num">&lt; €0,01</td><td class="num">&lt; €0,01</td><td><small>≈ 11 MB звук на час <span class="src e">оценка</span></small></td></tr>
+          <tr><td style="font-weight:600">Общо</td><td class="num" style="font-weight:600">≈ €1,0</td><td class="num" style="font-weight:600">≈ €0,2–0,4</td><td></td></tr>
+        </tbody></table></div>
+      <p class="callout" style="margin-top:10px">Транскрипцията на живо струва около 4 пъти повече от обработката след срещата. Пример: 20 зали × 4 ч на ден × 21 работни дни прави около 1 700 ч на месец. На живо това е ≈ €1 700, след срещата ≈ €400. Предложение: по подразбиране минутите се правят след срещата, а режимът на живо се включва само когато се ползва въпрос към Bix.</p>
+    </div>
+
+    <!-- 07 Compliance -->
+    <div class="panel" id="bp-comp">
+      <div class="sec-n">07</div>
+      <h2>Регулации преди продажба в ЕС</h2>
+      <p class="lede">Готовите сертифицирани модули (Wi-Fi в Pi 5, радарът) улесняват тестовете. Отговорността за крайния продукт обаче остава ваша.</p>
+      <div class="bp-grid2">
+        <ul class="checks comp">
+          <li><span class="dot warn"></span><span>CE по RED 2014/53/EU<small>Има радио (Wi-Fi/BT и 24 GHz радар). Нужни са EMC и радио тестове в акредитирана лаборатория и декларация за съответствие.</small></span></li>
+          <li><span class="dot warn"></span><span>Киберсигурност по RED, EN 18031<small>Задължително от 1.08.2025 за радиоустройства, свързани с интернет. Покрива уникални идентификатори, обновявания и защита на данните.</small></span></li>
+          <li><span class="dot warn"></span><span>Cyber Resilience Act<small>Докладването на активно използвани уязвимости е задължително от 11.09.2026. Пълните изисквания влизат от 11.12.2027.</small></span></li>
+          <li><span class="dot acc"></span><span>RoHS, WEEE, батерии<small>Регистрация като производител в ИАОС и договор с организация по оползотворяване.</small></span></li>
+        </ul>
+        <ul class="checks comp">
+          <li><span class="dot warn"></span><span>GDPR<small>Оценка на въздействието (DPIA) при всеки клиент, договор за обработка, списък с подизпълнители (разпознаване на реч, езиков модел), уведомление към служителите.</small></span></li>
+          <li><span class="dot warn"></span><span>AI Act, чл. 50<small>От 2.08.2026 хората трябва да знаят, че говорят с ИИ и че се записва. Затова има банер на екрана и светещ пръстен.</small></span></li>
+          <li><span class="dot bad"></span><span>Без разпознаване на емоции<small>Забранено е на работното място (AI Act, чл. 5, от 2.02.2025). Bix не анализира настроението и тона на хората.</small></span></li>
+          <li><span class="dot acc"></span><span>Безопасност<small>PoE е под 60 V DC, така че Директивата за ниско напрежение не се прилага. Важат Регламентът за безопасност на продуктите (GPSR) и EN 62368-1.</small></span></li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- 08 Roadmap -->
+    <div class="panel" id="bp-road">
+      <div class="sec-n">08</div>
+      <h2>План от нулата до старт</h2>
+      <p class="lede">Планът е за екип от двама: един за хардуер и фърмуер, един за облак. Всяка фаза има критерий за преминаване. Ако критерият не е изпълнен, не се продължава.</p>
+      <div class="road">
+        <div class="ph"><div class="when"><b>Фаза 0</b>седм. 1–2</div><div><b>Прототип на бюрото</b><ul><li>Поръчка на частите за 2 броя, печат, сглобяване.</li><li>Звукът стига от Pi до облака и обратно като текст.</li></ul><div class="gate"><b>Критерий:</b> 30 минути запис без прекъсване и без шум от вентилатора в записа.</div></div><div class="money"><span id="r-p0">—</span><small>части за 2 бр.</small></div></div>
+        <div class="ph"><div class="when"><b>Фаза 1</b>седм. 3–6</div><div><b>Качество на български</b><ul><li>10 реални срещи в 2 различни зали.</li><li>Сравнение на Azure и Google по грешки в думите и в разпознаването на говорещите.</li><li>Първи минути по имейл.</li></ul><div class="gate"><b>Критерий:</b> грешки в думите под 15%; поне 8 от 10 минути са използваеми без пренаписване.</div></div><div class="money">≈ €50<small>облак за тестове</small></div></div>
+        <div class="ph"><div class="when"><b>Фаза 2</b>седм. 6–10</div><div><b>Корпоративни функции</b><ul><li>802.1X, провизиране с QR код, OTA с връщане назад.</li><li>Админ портал със зали, ретенция и роли.</li><li>Интеграция с Microsoft 365.</li></ul><div class="gate"><b>Критерий:</b> ИТ на пилотен клиент инсталира устройство сам за под 15 минути.</div></div><div class="money">≈ €200<small>облак + домейни</small></div></div>
+        <div class="ph"><div class="when"><b>Фаза 3</b>седм. 10–16</div><div><b>Пилот</b><ul><li>5 устройства при 1–2 фирми.</li><li>DPIA и договор за обработка на данни.</li><li>Седмичен преглед на метриките: колко срещи имат минути и колко са поправени.</li></ul><div class="gate"><b>Критерий:</b> над 60% от срещите в пилотните зали минават през Bix; клиентът иска да плати.</div></div><div class="money"><span id="r-p3">—</span><small>5 бр. + облак</small></div></div>
+        <div class="ph"><div class="when"><b>Фаза 4</b>седм. 16–28</div><div><b>Готовност за серия</b><ul><li>Корпус от огнеустойчив PC/ABS (SLS за 50–200 бр. или шприц-форма над 500).</li><li>Предварителен EMC/RED тест, после пълен.</li><li>EN 18031, CE декларация, регистрация по WEEE.</li></ul><div class="gate"><b>Критерий:</b> подписана CE декларация и поне 3 платени договора.</div></div><div class="money">€8–35 хил.<small>лаборатория + форма <span class="src e">оценка</span></small></div></div>
+        <div class="ph"><div class="when"><b>Старт</b>от седм. 28</div><div><b>Продажба</b><ul><li>Хардуерът се продава на цена около 2,5–3 пъти над частите.</li><li>Абонамент на зала покрива облака и поддръжката.</li><li>Първа партида от 50 броя.</li></ul></div><div class="money">—</div></div>
+      </div>
+    </div>
+
+    <!-- 09 Risks -->
+    <div class="panel" id="bp-risk">
+      <div class="sec-n">09</div>
+      <h2>Рискове и отворени въпроси</h2>
+      <ul class="checks">
+        <li><span class="dot bad"></span><span>Качеството на български е недоказано<small>Ако разпознаването на говорещите не става при 6 души около маса, продуктът няма стойност. Затова се тества във Фаза 1, преди да се харчи друго.</small></span></li>
+        <li><span class="dot warn"></span><span>Цените на Pi се местят<small>През 2026 паметта поскъпна 3 пъти. За серия разгледайте Compute Module 5 с ваша платка, която обединява PoE и USB хъб.</small></span></li>
+        <li><span class="dot warn"></span><span>Няма наличност в България<small>Pi 5 2 GB и 4 GB липсваха в Erelement на 10.10. Поръчайте от двама доставчици.</small></span></li>
+        <li><span class="dot warn"></span><span>Механика по непълни данни<small>Монтажните отвори на XVF3800 и точните размери на ръба на дисплея не са публикувани в текст. Първият печат е тестов.</small></span></li>
+        <li><span class="dot acc"></span><span>Бутонът Mute е в DSP чипа<small>Той изключва микрофоните независимо от Pi. Където се изисква физическо прекъсване, сложете ключ, който прекъсва 5 V към масива (≈ €2).</small></span></li>
+      </ul>
+      <p class="foot" style="margin-top:12px">Източници за цени и данни:
+        <a href="https://erelement.com/category/development/raspberry-pi/raspberry-pi-5/">Erelement · Pi 5, PoE HAT, захранване</a> ·
+        <a href="https://raspberrypi.dk/en/?p=235144">raspberrypi.dk · Touch Display 2</a> ·
+        <a href="https://www.raspberrypi.com/documentation/accessories/touch-display-2.html">Raspberry Pi · размери на дисплея</a> ·
+        <a href="https://thepihut.com/products/respeaker-xmos-xvf3800-ai-powered-4-mic-array-for-clear-voice-even-in-noise">The Pi Hut · XVF3800</a> ·
+        <a href="https://wiki.seeedstudio.com/respeaker_xvf3800_introduction/">Seeed wiki · XVF3800</a> ·
+        <a href="https://www.waveshare.com/poe-hat-f.htm">Waveshare · PoE HAT (F)</a> ·
+        <a href="https://www.electrokit.com/en/ld2410c-human-presence-sensor-24ghz-radar">Electrokit · LD2410C</a> ·
+        <a href="https://www.phoronix.com/news/Raspberry-Pi-5-2GB-Price-77.50">Phoronix · цени на Pi 5</a> ·
+        <a href="https://cloud.google.com/speech-to-text/pricing">Google STT · цени</a> ·
+        <a href="https://aws.amazon.com/iot-core/pricing/">AWS IoT Core · цени</a></p>
+    </div>
+  </section>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+const $=s=>document.querySelector(s), $$=s=>Array.from(document.querySelectorAll(s));
+const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+const TAU=Math.PI*2, D2R=Math.PI/180;
+
+const S={form:'crt',material:'matte',color:'graphite',face:'eyes',exploded:false,scene:'studio',autorot:!reduce,
+  conn:'poe',region:'fra',retention:'90',speakerId:'calendar',speed:1};
+const COLORS={graphite:0x2d3238,white:0xe6e8ea,sand:0xc9b99c,navy:0x22364f};
+const COLOR_NAMES={graphite:'Графит',white:'Бял',sand:'Пясък',navy:'Тъмносин'};
+const FORM_HINT={mint:'Меко заоблено тяло с извит 7″ дисплей. Най-лесно за серийно производство.',
+  crt:'Кутия с плосък 7″ дисплей отпред. Пикселно лице, най-евтин корпус.',
+  orb:'Сфера на основа с кръгъл 4″ дисплей. Светлинният пръстен е около основата.'};
+const REGION={fra:'ЕС · Франкфурт',ams:'ЕС · Амстердам',private:'Частен облак на клиента'};
+const PEOPLE=[
+  {id:'m',name:'Мария Петрова',role:'Продукт',deg:38,col:0x7b8fa8},
+  {id:'g',name:'Георги Иванов',role:'Разработка',deg:-38,col:0xa8907b},
+  {id:'e',name:'Елена Димитрова',role:'Маркетинг',deg:142,col:0x86a87b},
+  {id:'i',name:'Иван Стоянов',role:'Финанси',deg:-142,col:0x9c7ba8}];
+const P=Object.fromEntries(PEOPLE.map((p,i)=>[p.id,Object.assign(p,{idx:i,a:p.deg*D2R})]));
+
+if(!window.THREE){ $('#stage').insertAdjacentHTML('beforeend','<p class="empty" style="position:absolute;inset:auto 16px 60px">3D библиотеката не се зареди. Симулацията по-долу работи и без нея.</p>'); }
+const HAS3D=!!window.THREE;
+const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+/* ---------- face canvas ---------- */
+const faceCanvas=document.createElement('canvas'); faceCanvas.width=640; faceCanvas.height=400;
+const fc=faceCanvas.getContext('2d');
+let faceTex=null;
+function rr(c,x,y,w,h,r){r=Math.min(r,w/2,h/2);c.beginPath();c.moveTo(x+r,y);c.arcTo(x+w,y,x+w,y+h,r);c.arcTo(x+w,y+h,x,y+h,r);c.arcTo(x,y+h,x,y,r);c.arcTo(x,y,x+w,y,r);c.closePath();}
+function wrapText(c,text,x,y,maxW,lh){const words=text.split(' ');let line='',yy=y;for(const w of words){const t=line?line+' '+w:w;if(c.measureText(t).width>maxW&&line){c.fillText(line,x,yy);line=w;yy+=lh;}else line=t;}if(line)c.fillText(line,x,yy);}
+function fmt(t){t=Math.max(0,Math.floor(t));return String(Math.floor(t/60)).padStart(2,'0')+':'+String(t%60).padStart(2,'0');}
+
+function drawFace(now){
+  const c=fc,W=640,H=400; const st=faceState();
+  c.fillStyle='#06080a'; c.fillRect(0,0,W,H);
+  const amber='#f2b54a', teal='#3cc0be', red='#f06a5f';
+  const font=(w,s)=>w+' '+s+'px Onest, system-ui, sans-serif';
+  if(st.mode==='muted'){
+    c.strokeStyle=red;c.lineWidth=10;c.beginPath();c.arc(W/2,150,62,0,TAU);c.stroke();
+    rr(c,W/2-18,108,36,64,18);c.stroke();c.beginPath();c.moveTo(W/2-60,212);c.lineTo(W/2+60,92);c.stroke();
+    c.fillStyle=red;c.font=font(600,30);c.textAlign='center';c.fillText('Микрофоните са изключени',W/2,280);
+    c.fillStyle='#9aa3ad';c.font=font(400,22);c.fillText('Нищо не се записва',W/2,320);
+  }else if(st.mode==='answer'){
+    c.textAlign='left';c.fillStyle=amber;c.font=font(600,22);c.fillText('BIX ОТГОВАРЯ',40,58);
+    c.fillStyle='#eef1f4';c.font=font(500,30);wrapText(c,st.text,40,108,W-80,40);
+  }else if(st.mode==='think'){
+    for(let i=0;i<3;i++){const p=(Math.sin(now*6-i*0.8)+1)/2;c.fillStyle=amber;c.globalAlpha=.35+.65*p;c.beginPath();c.arc(W/2-60+i*60,H/2-10,16+p*6,0,TAU);c.fill();}
+    c.globalAlpha=1;c.fillStyle='#9aa3ad';c.font=font(400,22);c.textAlign='center';c.fillText('Мисля…',W/2,H/2+70);
+  }else if(st.mode==='done'){
+    c.strokeStyle=teal;c.lineWidth=12;c.beginPath();c.moveTo(W/2-50,150);c.lineTo(W/2-12,188);c.lineTo(W/2+56,112);c.stroke();
+    c.fillStyle='#eef1f4';c.font=font(600,30);c.textAlign='center';c.fillText('Минутите са изпратени',W/2,270);
+    c.fillStyle='#9aa3ad';c.font=font(400,22);c.fillText('до 4 участника',W/2,308);
+  }else if(S.face==='status' && sim.started){
+    c.textAlign='left';c.fillStyle=red;c.beginPath();c.arc(52,52,10,0,TAU);c.fill();
+    c.fillStyle='#eef1f4';c.font=font(600,26);c.fillText('ЗАПИС  '+fmt(sim.t),74,62);
+    const talking=sim.cur&&!sim.muted;
+    for(let i=0;i<24;i++){const h=talking?(18+Math.abs(Math.sin(now*9+i*1.7))*110*(0.4+0.6*Math.abs(Math.sin(i*.6+now)))):8;
+      c.fillStyle=talking?teal:'#39424b';rr(c,48+i*23,H/2-h/2+10,14,h,7);c.fill();}
+    c.fillStyle='#9aa3ad';c.font=font(500,24);
+    c.fillText(sim.cur?speakerLabel(P[sim.cur.line.who]).name:'Тишина',48,H-48);
+  }else{
+    // eyes
+    const idle=!sim.started; let lx=0,ly=0;
+    if(sim.cur){const a=P[sim.cur.line.who].a;lx=Math.sin(a)*42;ly=Math.cos(a)<0?-14:6;}
+    else if(idle){lx=Math.sin(now*.5)*30;ly=Math.sin(now*.31)*8;}
+    const blinkPhase=(now%4.2); const blink=blinkPhase<.14?Math.abs(blinkPhase-.07)/.07:1;
+    const eh=Math.max(10,118*blink*(idle?.8:1)), ew=92;
+    const g=c.createLinearGradient(0,H/2-70,0,H/2+70);g.addColorStop(0,'#ffe2a3');g.addColorStop(1,'#f09a2e');
+    c.fillStyle=g;c.shadowColor='rgba(242,181,74,.6)';c.shadowBlur=28;
+    for(const sx of[-1,1]){rr(c,W/2+sx*112-ew/2+lx,H/2-24-eh/2+ly,ew,eh,40);c.fill();}
+    c.shadowBlur=0;c.strokeStyle=amber;c.lineWidth=8;c.lineCap='round';c.beginPath();
+    c.arc(W/2+lx*.5,H/2+78,34,0.15*Math.PI,0.85*Math.PI);c.stroke();
+  }
+  if(sim.started&&!sim.done&&netOffline()){
+    c.fillStyle='rgba(240,180,76,.92)';c.fillRect(0,H-44,W,44);c.fillStyle='#1b1406';c.font=font(600,20);c.textAlign='center';
+    c.fillText('Няма връзка · локален буфер '+fmt(sim.buffer),W/2,H-15);
+  }
+  if(S.form==='crt'){c.fillStyle='rgba(255,255,255,.035)';for(let y=0;y<H;y+=4)c.fillRect(0,y,W,1);}
+  if(faceTex)faceTex.needsUpdate=true;
+}
+
+/* ---------- three.js scene ---------- */
+let renderer,scene,camera,shadowPlane,room,tableMat,floorMat,bix=null,refs={},fabricTex,people=[],waves=[];
+const view={theta:.55,phi:1.12,r:5.6,ty:.85}, goal={theta:.55,phi:1.12,r:5.6,ty:.85};
+let lastDrag=-10;
+
+function makeFabric(){const cv=document.createElement('canvas');cv.width=cv.height=64;const c=cv.getContext('2d');
+  c.fillStyle='#ffffff';c.fillRect(0,0,64,64);c.fillStyle='rgba(0,0,0,.16)';
+  for(let i=0;i<64;i+=4){c.fillRect(i,0,1,64);c.fillRect(0,i+2,64,1);}
+  const t=new THREE.CanvasTexture(cv);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(10,6);return t;}
+function makeEnv(){
+  const faces=[];for(let i=0;i<6;i++){const cv=document.createElement('canvas');cv.width=cv.height=64;const c=cv.getContext('2d');
+    if(i===2){c.fillStyle='#ffffff';c.fillRect(0,0,64,64);}else if(i===3){c.fillStyle='#2a2e33';c.fillRect(0,0,64,64);}
+    else{const g=c.createLinearGradient(0,0,0,64);g.addColorStop(0,'#f2f5f8');g.addColorStop(.55,'#9aa4ae');g.addColorStop(1,'#30363c');c.fillStyle=g;c.fillRect(0,0,64,64);
+      c.fillStyle='rgba(255,255,255,.9)';c.fillRect(i*9%40+6,10,14,22);}
+    faces.push(cv);}
+  const cube=new THREE.CubeTexture(faces);cube.needsUpdate=true;
+  const pm=new THREE.PMREMGenerator(renderer);return pm.fromCubemap(cube).texture;}
+
+function init3D(){
+  const canvas=$('#gl');
+  renderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:true});
+  renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+  scene=new THREE.Scene(); camera=new THREE.PerspectiveCamera(34,1,.05,300);
+  scene.environment=makeEnv();
+  scene.add(new THREE.HemisphereLight(0xf4f7fa,0x3a4048,.55));
+  const key=new THREE.DirectionalLight(0xffffff,.9);key.position.set(4,9,6);key.castShadow=true;key.shadow.mapSize.set(2048,2048);
+  Object.assign(key.shadow.camera,{left:-13,right:13,top:13,bottom:-13,near:1,far:40});key.shadow.bias=-.0005;scene.add(key);
+  const rim=new THREE.DirectionalLight(0xa8dcff,.3);rim.position.set(-6,4,-5);scene.add(rim);
+  shadowPlane=new THREE.Mesh(new THREE.PlaneGeometry(40,40),new THREE.ShadowMaterial({opacity:.18}));
+  shadowPlane.rotation.x=-Math.PI/2;shadowPlane.receiveShadow=true;scene.add(shadowPlane);
+  faceTex=new THREE.CanvasTexture(faceCanvas);
+  fabricTex=makeFabric();
+  buildRoom(); buildBix(); bindOrbit(); resize();
+  new ResizeObserver(resize).observe($('#stage'));
+}
+function resize(){if(!renderer)return;const el=$('#stage');const w=el.clientWidth,h=el.clientHeight;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();}
+
+function applyTheme(){if(!HAS3D)return;tableMat.color.set(css('--table')||'#c9ced3');floorMat.color.set(css('--stage-lo')||'#dde3e8');
+  const dark=matchMedia('(prefers-color-scheme: dark)').matches&&document.documentElement.dataset.theme!=='light'||document.documentElement.dataset.theme==='dark';
+  shadowPlane.material.opacity=dark?.45:.18;}
+
+function buildRoom(){
+  room=new THREE.Group();
+  tableMat=new THREE.MeshStandardMaterial({color:0x8f99a3,roughness:.55,metalness:.05,envMapIntensity:.5});
+  const table=new THREE.Mesh(new THREE.CylinderGeometry(7.2,7.2,.5,72),tableMat);table.position.y=-.25;table.receiveShadow=true;room.add(table);
+  const leg=new THREE.Mesh(new THREE.CylinderGeometry(.8,1.4,7,24),tableMat);leg.position.y=-4;room.add(leg);
+  floorMat=new THREE.MeshStandardMaterial({color:0xdde3e8,roughness:1});
+  const floor=new THREE.Mesh(new THREE.CircleGeometry(30,64),floorMat);floor.rotation.x=-Math.PI/2;floor.position.y=-7.5;floor.receiveShadow=true;room.add(floor);
+  for(const p of PEOPLE){
+    const g=new THREE.Group();const mat=new THREE.MeshStandardMaterial({color:p.col,roughness:.85});
+    const headMat=new THREE.MeshStandardMaterial({color:p.col,roughness:.7,emissive:0x3cc0be,emissiveIntensity:0});
+    const torso=new THREE.Mesh(new THREE.CylinderGeometry(1.1,1.5,5.6,28),mat);torso.position.y=.6;torso.castShadow=true;g.add(torso);
+    const sh=new THREE.Mesh(new THREE.SphereGeometry(1.1,24,16),mat);sh.scale.y=.55;sh.position.y=3.4;g.add(sh);
+    const head=new THREE.Mesh(new THREE.SphereGeometry(.95,28,20),headMat);head.position.y=4.85;head.castShadow=true;g.add(head);
+    g.position.set(Math.sin(p.a)*9.6,0,Math.cos(p.a)*9.6);room.add(g);
+    const lbl=document.createElement('div');lbl.className='lbl person';lbl.innerHTML='<b>'+p.name+'</b><small>'+p.role+'</small>';$('#labels').appendChild(lbl);
+    people.push({p,g,headMat,head,lbl});
+  }
+  room.visible=false;scene.add(room);
+  const wm=()=>new THREE.MeshBasicMaterial({color:0x3cc0be,transparent:true,opacity:0,side:THREE.DoubleSide,depthWrite:false});
+  for(let i=0;i<14;i++){const m=new THREE.Mesh(new THREE.RingGeometry(.92,1,48),wm());m.visible=false;scene.add(m);waves.push({m,life:0});}
+}
+function spawnWave(pos,color){const w=waves.find(w=>!w.m.visible);if(!w)return;w.m.position.copy(pos);w.m.material.color.set(color);w.life=0;w.m.visible=true;}
+
+function shellMaterial(){
+  const col=COLORS[S.color];let m;
+  if(S.material==='alu')m=new THREE.MeshStandardMaterial({color:col,metalness:.85,roughness:.3,envMapIntensity:1.2});
+  else if(S.material==='fabric')m=new THREE.MeshStandardMaterial({color:col,roughness:1,metalness:0,map:fabricTex,bumpMap:fabricTex,bumpScale:.012,envMapIntensity:.3});
+  else m=new THREE.MeshStandardMaterial({color:col,roughness:.62,metalness:.02,envMapIntensity:.6});
+  m.transparent=true;return m;}
+function roundRect(w,h,r){const s=new THREE.Shape(),x=-w/2,y=-h/2;s.moveTo(x+r,y);s.lineTo(x+w-r,y);s.quadraticCurveTo(x+w,y,x+w,y+r);s.lineTo(x+w,y+h-r);
+  s.quadraticCurveTo(x+w,y+h,x+w-r,y+h);s.lineTo(x+r,y+h);s.quadraticCurveTo(x,y+h,x,y+h-r);s.lineTo(x,y+r);s.quadraticCurveTo(x,y,x+r,y);return s;}
+
+function buildBix(){
+  const keepEx=refs.ex||0;
+  if(bix){scene.remove(bix);bix.traverse(o=>{if(o.geometry)o.geometry.dispose();});$$('.lbl.part').forEach(e=>e.remove());}
+  bix=new THREE.Group();refs={shell:[],leds:[],parts:[],ex:keepEx};
+  const shellMat=shellMaterial();refs.shellMat=shellMat;
+  const darkMat=new THREE.MeshStandardMaterial({color:0x16191c,roughness:.55,metalness:.1,transparent:true});refs.darkMat=darkMat;
+  const screenMat=new THREE.MeshBasicMaterial({map:faceTex,transparent:true});refs.screenMat=screenMat;
+  const add=(geo,mat,shell=true)=>{const m=new THREE.Mesh(geo,mat);m.castShadow=true;bix.add(m);if(shell)refs.shell.push(m);return m;};
+  let d;
+  if(S.form==='mint'){
+    add(new THREE.CylinderGeometry(.66,.72,.14,48),darkMat).position.y=.07;
+    const pts=[[0,0],[.6,.01],[.69,.1],[.72,.3],[.72,.98],[.68,1.2],[.56,1.4],[.34,1.53],[0,1.58]].map(p=>new THREE.Vector2(p[0],p[1]));
+    add(new THREE.LatheGeometry(pts,72),shellMat).position.y=.13;
+    add(new THREE.CylinderGeometry(.724,.724,.54,48,1,true,-.7,1.4),darkMat).position.y=.79;
+    refs.screen=add(new THREE.CylinderGeometry(.729,.729,.46,48,1,true,-.62,1.24),screenMat);refs.screen.position.y=.79;
+    d={top:1.71,screenY:.79,front:.73,ledY:1.53,ledR:.585,baseY:.07,baseZ:.72};
+  }else if(S.form==='crt'){
+    add(new THREE.BoxGeometry(1.1,.1,.8),darkMat).position.y=.05;
+    const g=new THREE.ExtrudeGeometry(roundRect(1.36,1.12,.2),{depth:.9,bevelEnabled:true,bevelThickness:.06,bevelSize:.06,bevelSegments:4,curveSegments:10});
+    g.translate(0,0,-.45);add(g,shellMat).position.y=.72;
+    const bz=add(new THREE.PlaneGeometry(1.18,.92),darkMat);bz.position.set(0,.74,.513);
+    refs.screen=add(new THREE.PlaneGeometry(1.02,.74),screenMat);refs.screen.position.set(0,.74,.516);
+    const grill=add(new THREE.CircleGeometry(.44,48),darkMat);grill.rotation.x=-Math.PI/2;grill.position.y=1.342;
+    d={top:1.34,screenY:.74,front:.52,ledY:1.35,ledR:.4,baseY:.05,baseZ:.4};
+  }else{
+    add(new THREE.CylinderGeometry(.5,.58,.26,48),darkMat).position.y=.13;
+    add(new THREE.SphereGeometry(.74,64,48),shellMat).position.y=.92;
+    const bz=add(new THREE.SphereGeometry(.744,48,32,Math.PI/2-.68,1.36,Math.PI/2-.52,1.04),darkMat);bz.position.y=.92;
+    refs.screen=add(new THREE.SphereGeometry(.748,48,32,Math.PI/2-.6,1.2,Math.PI/2-.45,.9),screenMat);refs.screen.position.y=.92;
+    d={top:1.66,screenY:.92,front:.75,ledY:.265,ledR:.545,baseY:.13,baseZ:.55};
+  }
+  refs.dims=d;
+  // mic cap + 4 mic ports
+  const cap=add(new THREE.CylinderGeometry(.2,.2,.02,40),darkMat);cap.position.y=d.top-.005;
+  for(let i=0;i<4;i++){const a=i/4*TAU+Math.PI/4;const h=add(new THREE.CylinderGeometry(.022,.022,.03,12),new THREE.MeshBasicMaterial({color:0x050607}));
+    h.position.set(Math.sin(a)*.12,d.top+.004,Math.cos(a)*.12);}
+  // LED ring
+  for(let i=0;i<12;i++){const a=i/12*TAU;const l=new THREE.Mesh(new THREE.SphereGeometry(.026,10,8),new THREE.MeshBasicMaterial({color:0x333333}));
+    l.position.set(Math.sin(a)*d.ledR,d.ledY,Math.cos(a)*d.ledR);l.userData.a=a;bix.add(l);refs.leds.push(l);}
+  // hardware mute button
+  const mb=new THREE.Mesh(new THREE.CylinderGeometry(.07,.07,.04,24),new THREE.MeshBasicMaterial({color:0x6b737c}));
+  mb.rotation.x=Math.PI/2;mb.position.set(0,d.baseY,d.baseZ);bix.add(mb);refs.muteBtn=mb;
+  // internals
+  const pcb=new THREE.MeshStandardMaterial({color:0x1f5a3d,roughness:.5,metalness:.2});
+  const metal=new THREE.MeshStandardMaterial({color:0xb9bec4,roughness:.35,metalness:.8});
+  const black=new THREE.MeshStandardMaterial({color:0x202326,roughness:.6});
+  const netLbl={poe:['PoE+ HAT','802.3at · до 25,5 W · 802.1X'],wifi:['Wi-Fi 6 модул','2,4/5 GHz · WPA3-Enterprise'],lte:['LTE Cat-4 модем','резерва при отпадане на Wi-Fi']}[S.conn];
+  const disp=S.form==='orb'?['Кръгъл дисплей 4″','тъч · 720×720']:['Дисплей 7″ IPS','тъч · 1024×600'];
+  const part=(geo,mat,name,sub,c,e)=>{const m=new THREE.Mesh(geo,mat);m.castShadow=true;m.userData={c:new THREE.Vector3(...c),e:new THREE.Vector3(...e)};
+    m.visible=false;bix.add(m);const lbl=document.createElement('div');lbl.className='lbl part';lbl.innerHTML='<b>'+name+'</b><small>'+sub+'</small>';
+    $('#labels').appendChild(lbl);m.userData.lbl=lbl;refs.parts.push(m);return m;};
+  const mic=part(new THREE.CylinderGeometry(.32,.32,.03,40),pcb,'Микрофонен масив XVF3800','4 мик. · AEC · beamforming · посока',[0,d.top-.12,0],[0,d.top+.9,0]);
+  for(let i=0;i<4;i++){const a=i/4*TAU+Math.PI/4;const s=new THREE.Mesh(new THREE.CylinderGeometry(.03,.03,.04,10),metal);s.position.set(Math.sin(a)*.12,.03,Math.cos(a)*.12);mic.add(s);}
+  const dg=S.form==='orb'?new THREE.CylinderGeometry(.42,.42,.04,48):new THREE.BoxGeometry(.98,.62,.04);
+  const dm=S.form==='orb'?[black,black,black]:[black,black,black,black,screenMat,black];
+  const dp=part(dg,dm,disp[0],disp[1],[0,d.screenY,d.front-.08],[0,d.screenY+.1,d.front+1.05]);
+  if(S.form==='orb'){dp.rotation.x=Math.PI/2;const face=new THREE.Mesh(new THREE.CircleGeometry(.4,48),screenMat);face.rotation.x=-Math.PI/2;face.position.y=.021;dp.add(face);}
+  const pi=part(new THREE.BoxGeometry(.85,.05,.56),pcb,'Raspberry Pi 5 · 2 GB','откриване на реч · дума за събуждане · Opus',[0,d.screenY-.04,-.16],[-1.6,d.screenY+.35,-.1]);
+  const soc=new THREE.Mesh(new THREE.BoxGeometry(.18,.04,.18),metal);soc.position.set(-.1,.04,0);pi.add(soc);
+  const ram=new THREE.Mesh(new THREE.BoxGeometry(.14,.03,.1),black);ram.position.set(.15,.035,.08);pi.add(ram);
+  part(new THREE.BoxGeometry(.5,.05,.4),pcb,netLbl[0],netLbl[1],[0,d.screenY-.24,-.16],[1.6,d.screenY+.35,-.1]);
+  part(new THREE.CylinderGeometry(.24,.17,.15,32),black,'Високоговорител 3 W','с усилвател · ехото се премахва в масива',[0,.34,-.04],[1.5,.4,.45]);
+  part(new THREE.BoxGeometry(.2,.08,.05),pcb,'mmWave радар 24 GHz','засича присъствие и на седящи хора',[0,d.screenY-.36,d.front-.1],[-1.5,.4,.5]);
+  scene.add(bix);
+  $('#stage-title').textContent=(S.scene==='room'?'Заседателна зала':'Студио')+' · '+S.form.toUpperCase();
+}
+
+function bindOrbit(){
+  const cv=$('#gl');let drag=null;
+  cv.addEventListener('pointerdown',e=>{drag={x:e.clientX,y:e.clientY,touch:e.pointerType==='touch'};cv.setPointerCapture(e.pointerId);});
+  cv.addEventListener('pointermove',e=>{if(!drag)return;const dx=e.clientX-drag.x,dy=e.clientY-drag.y;drag.x=e.clientX;drag.y=e.clientY;
+    goal.theta-=dx*.008;view.theta-=dx*.008;if(!drag.touch){goal.phi=Math.min(1.5,Math.max(.25,goal.phi-dy*.006));}lastDrag=performance.now()/1000;});
+  const end=()=>{drag=null;};cv.addEventListener('pointerup',end);cv.addEventListener('pointercancel',end);
+  $('#zin').onclick=()=>{goal.r=Math.max(S.scene==='room'?12:2.6,goal.r*.82);};
+  $('#zout').onclick=()=>{goal.r=Math.min(S.scene==='room'?40:12,goal.r*1.22);};
+}
+function setSceneView(){if(S.scene==='room'){goal.r=42;goal.ty=.4;goal.phi=.78;}else{goal.r=S.exploded?7.6:5.6;goal.ty=S.exploded?1.05:.85;goal.phi=1.12;}}
+
+/* ---------- LEDs ---------- */
+function updateLeds(now){
+  const st=faceState();const off=netOffline();
+  for(const l of refs.leds){const a=l.userData.a;let r=.22,g=.22,b=.22;
+    if(!sim.started){const k=.25+.12*Math.sin(now*1.5);r=g=b=k;}
+    else if(sim.muted){r=.95;g=.25;b=.2;}
+    else if(st.mode==='think'||st.mode==='answer'){const p=((a-now*4)%TAU+TAU)%TAU;const k=Math.pow(1-p/TAU,3);r=.95*k+.1;g=.7*k+.08;b=.25*k+.04;}
+    else if(sim.done){const k=.35+.25*Math.sin(now*2);r=.15*k;g=.75*k;b=.45*k;}
+    else{const base=.12;let k=0;if(sim.cur){const sa=P[sim.cur.line.who].a;k=Math.pow(Math.max(0,Math.cos(a-sa)),8);}
+      r=.05+.2*k;g=base+.65*k;b=base+.65*k;
+      if(off&&Math.sin(now*6)>0){r=Math.max(r,.9);g=Math.max(g,.6);b=Math.max(b,.15);}}
+    l.material.color.setRGB(r,g,b);}
+  refs.muteBtn.material.color.set(sim.muted?0xf06a5f:0x6b737c);
+}
+
+/* ---------- render loop ---------- */
+let lastT=performance.now()/1000, faceAcc=0;
+
+function project(obj,offY,el){
+  const v=new THREE.Vector3();obj.getWorldPosition(v);v.y+=offY;v.project(camera);
+  const st=$('#stage');const x=(v.x*.5+.5)*st.clientWidth,y=(-v.y*.5+.5)*st.clientHeight;
+  el.style.transform='translate('+x.toFixed(1)+'px,'+y.toFixed(1)+'px) translate(-50%,-115%)';return v.z<1;}
+function frame(){
+  const now=performance.now()/1000;let dt=Math.min(.1,now-lastT);lastT=now;
+  simStep(dt);
+  faceAcc+=dt;if(faceAcc>1/30){drawFace(now);faceAcc=0;}
+  if(HAS3D){
+    if(S.autorot&&!reduce&&now-lastDrag>4&&!S.exploded)goal.theta+=dt*.18;
+    const k=1-Math.pow(.002,dt);
+    view.theta+=(goal.theta-view.theta)*k;view.phi+=(goal.phi-view.phi)*k;view.r+=(goal.r-view.r)*k;view.ty+=(goal.ty-view.ty)*k;
+    camera.position.set(view.r*Math.sin(view.phi)*Math.sin(view.theta),view.ty+view.r*Math.cos(view.phi),view.r*Math.sin(view.phi)*Math.cos(view.theta));
+    camera.lookAt(0,view.ty,0);
+    // explode
+    const tgt=S.exploded?1:0;refs.ex+=(tgt-refs.ex)*(1-Math.pow(.004,dt));const e=refs.ex,ee=e*e*(3-2*e);
+    const op=1-ee*.86;
+    for(const m of[refs.shellMat,refs.darkMat,refs.screenMat]){m.opacity=op;m.depthWrite=op>.98;}
+    for(const p of refs.parts){p.visible=e>.02;p.position.lerpVectors(p.userData.c,p.userData.e,ee);
+      const show=e>.6&&S.scene==='studio';p.userData.lbl.classList.toggle('show',show);if(show)project(p,.12,p.userData.lbl);}
+    updateLeds(now);
+    // people
+    for(const pp of people){const talk=sim.cur&&sim.cur.line.who===pp.p.id;pp.headMat.emissiveIntensity+=((talk?.55:0)-pp.headMat.emissiveIntensity)*.15;
+      const show=S.scene==='room';pp.lbl.classList.toggle('show',show);pp.lbl.classList.toggle('talk',!!talk);if(show)project(pp.head,1.7,pp.lbl);}
+    // waves
+    if(!reduce&&S.scene==='room'){
+      sim.waveAcc=(sim.waveAcc||0)+dt;
+      if(sim.waveAcc>.55){sim.waveAcc=0;
+        if(sim.cur){const pp=people[P[sim.cur.line.who].idx];const v=new THREE.Vector3();pp.head.getWorldPosition(v);spawnWave(v,0x3cc0be);}
+        if(faceState().mode==='answer'){spawnWave(new THREE.Vector3(0,refs.dims.top+.3,0),0xf2b54a);}}
+    }
+    for(const w of waves){if(!w.m.visible)continue;w.life+=dt;const s=1+w.life*2.4;w.m.scale.set(s,s,s);w.m.material.opacity=Math.max(0,.55*(1-w.life/1.3));
+      w.m.lookAt(camera.position);if(w.life>1.3)w.m.visible=false;}
+    renderer.render(scene,camera);
+  }
+  requestAnimationFrame(frame);
+}
+
+/* ---------- simulation ---------- */
+const LINES=[
+  {id:'L1',who:'m',text:'Добре, да започваме. Целта днес е да решим датата за пилота в трите офиса.'},
+  {id:'L2',who:'g',text:'Облачната част е готова. Остава OTA обновяването на устройствата, още около две седмици работа.'},
+  {id:'L3',who:'e',text:'Маркетингът иска пилотът да тръгне преди конференцията на 18 ноември.'},
+  {id:'L4',who:'i',text:'Бюджетът е одобрен за 20 устройства. За повече ще трябва нов разговор с финансите.'},
+  {id:'L5',who:'m',text:'Тогава пилотът е с 20 устройства и стартира на 10 ноември. Георги, OTA до 3 ноември става ли?'},
+  {id:'L6',who:'g',text:'Става. В понеделник пускам тестова група от пет зали.'},
+  {id:'L7',who:'e',text:'Bix, какво решихме за датата?',wake:true},
+  {id:'L8',who:'i',text:'Запишете ми задача: отчет за разходите след първата седмица на пилота.'},
+  {id:'L9',who:'m',text:'Записано. Благодаря на всички, приключваме.'}];
+const MIN={
+  decisions:[{text:'Пилот с 20 устройства в трите офиса, старт на 10.11.2026.',src:['L5']},
+             {text:'Бюджетът покрива 20 устройства. Разширение изисква нов разговор с финансите.',src:['L4']}],
+  actions:[{who:'g',text:'OTA обновяване на устройствата',due:'03.11.2026',src:['L5','L6']},
+           {who:'g',text:'Тестова група от пет зали',due:'12.10.2026',src:['L6']},
+           {who:'i',text:'Отчет за разходите след първата седмица на пилота',due:'17.11.2026',src:['L8']}],
+  open:[{text:'Маркетингът иска старт преди конференцията на 18.11. Материалите за пилота не са обсъдени.',src:['L3']}]};
+const EVENTS=[];(function(){let t=0;EVENTS.push({t:0,kind:'sys',text:'Засечено присъствие (mmWave радар) · екранът се събужда'});
+  EVENTS.push({t:1.6,kind:'sys',text:'Мария стартира срещата с допир · календар: „Q4 пилот на Bix Cloud“ · 4 поканени · индикаторът за запис светва'});
+  t=3.4;for(const l of LINES){l.dur=Math.max(2.2,l.text.length/16);EVENTS.push({t,kind:'line',line:l});t+=l.dur+.9;
+    if(l.wake){EVENTS.push({t:t+.2,kind:'answer'});t+=7.2;}}
+  EVENTS.push({t:t+.6,kind:'end'});})();
+
+const sim={};
+function resetSim(){Object.assign(sim,{running:false,started:false,done:false,t:0,ev:0,cur:null,chunkAcc:0,bytes:0,buffer:0,captured:{},final:{},
+  pending:[],answer:null,thinkUntil:-1,lat:null,netDown:sim.netDown||false,muted:sim.muted||false,shown:new Set(),rel:0});
+  $('#transcript').innerHTML='<p class="empty">Натиснете „Пусни“. Bix ще засече присъствие, Мария ще стартира срещата с допир и четирима участници ще говорят около масата.</p>';
+  $('#min-body').innerHTML='<p class="empty">Решенията и задачите се появяват тук веднага щом бъдат казани, още по време на срещата.</p>';
+  setMinChip('','Чакат среща');updatePlay();updateMetrics();}
+function netOffline(){return !!sim.netDown&&S.conn!=='lte';}
+function speakerLabel(p){const deg=((p.deg%360)+360)%360;
+  if(S.speakerId==='anon')return{name:'Говорещ '+(p.idx+1),tag:'посока '+deg+'°'};
+  if(S.speakerId==='voice')return{name:p.name,tag:'гласов профил'};
+  return{name:p.name,tag:'календар + посока '+deg+'°'};}
+function ownerName(id){const p=P[id];return S.speakerId==='anon'?'Говорещ '+(p.idx+1):p.name;}
+
+function addEntry(cls,who,tag,text,t){const tr=$('#transcript');const em=tr.querySelector('.empty');if(em)em.remove();
+  const d=document.createElement('div');d.className='tline '+cls;
+  d.innerHTML='<div class="tm">'+fmt(t)+'</div><div><div class="who"></div><div class="tx"></div></div>';
+  const w=d.querySelector('.who');if(who){w.textContent=who;if(tag){const s=document.createElement('span');s.className='tag';s.textContent=tag;w.appendChild(s);}}else w.remove();
+  d.querySelector('.tx').textContent=text;tr.appendChild(d);tr.scrollTop=tr.scrollHeight;return d;}
+function sys(text){addEntry('sys','','',text,sim.t);}
+
+function pulse(i,cls){const el=$('#pipeline').children[i];if(!el)return;el.classList.add(cls||'hot');setTimeout(()=>el.classList.remove(cls||'hot'),320/Math.sqrt(S.speed));}
+function sendChunk(){sim.bytes+=1500;
+  if(netOffline()){sim.buffer+=.5;pulse(0);setTimeout(()=>pulse(1),90);return;}
+  sim.lat=.75+Math.random()*.45+(sim.netDown&&S.conn==='lte'?.25:0);
+  [0,1,2,3,4].forEach((i,k)=>setTimeout(()=>pulse(i),k*110/S.speed));}
+
+function startEvent(ev){
+  if(ev.kind==='sys'){sys(ev.text);if(ev.text.startsWith('Мария'))sim.recording=true;}
+  else if(ev.kind==='line'){const l=ev.line;const cap=!sim.muted;sim.captured[l.id]=cap;
+    const lab=speakerLabel(P[l.who]);
+    sim.cur={line:l,start:sim.t,entry:cap?addEntry('partial'+(l.wake?' wake':''),lab.name,lab.tag,'',sim.t):null,buffered:netOffline()};}
+  else if(ev.kind==='answer'){
+    if(!sim.captured.L7){sys('Въпросът към Bix не е записан, защото микрофоните бяха изключени.');return;}
+    let text;
+    if(netOffline())text='Няма връзка с облака. Записвам локално и ще отговоря, когато връзката се върне.';
+    else if(sim.captured.L5)text='Пилотът стартира на 10 ноември с 20 устройства. '+ownerName('g').split(' ')[0]+' поема OTA обновяването до 3 ноември.';
+    else if(sim.captured.L3)text='В записаната част няма решение за датата. Чух само, че маркетингът иска старт преди 18 ноември.';
+    else text='В записаната част няма решение за датата.';
+    sim.answer={text,until:sim.t+6.2};addEntry('bix','Bix','отговор на глас и на екрана',text,sim.t);[5,6].forEach((i,k)=>setTimeout(()=>pulse(i),k*120));}
+  else if(ev.kind==='end'){sim.done=true;sim.running=false;sim.recording=false;
+    sys('Мария спря срещата с допир · финалните минути са изпратени до 4 участника · записът изчезва след '+S.retention+' дни');
+    renderMinutes(true);updatePlay();}
+}
+function finishLine(c){const l=c.line;sim.final[l.id]=true;
+  if(c.entry){if(c.buffered){c.entry.className='tline buffered';c.entry.querySelector('.tx').textContent='Записано локално · чака връзка';sim.pending.push({e:c.entry,text:l.text,wake:l.wake});}
+    else{c.entry.className='tline'+(l.wake?' wake':'');c.entry.querySelector('.tx').textContent=l.text;[5,6].forEach((i,k)=>setTimeout(()=>pulse(i),k*120));}}
+  if(l.wake&&sim.captured[l.id])sim.thinkUntil=sim.t+1.3;
+  renderMinutes(false);}
+
+function simStep(dt){
+  if(!sim.running)return;dt*=S.speed;sim.t+=dt;
+  while(EVENTS[sim.ev]&&EVENTS[sim.ev].t<=sim.t)startEvent(EVENTS[sim.ev++]);
+  if(sim.cur){const c=sim.cur,l=c.line,p=(sim.t-c.start)/l.dur;
+    if(!sim.muted&&c.entry){sim.chunkAcc+=dt;while(sim.chunkAcc>=.5){sim.chunkAcc-=.5;sendChunk();}
+      if(netOffline())c.buffered=true;
+      if(!c.buffered){const n=Math.floor(Math.min(1,p)*l.text.length);const tx=c.entry.querySelector('.tx');if(tx.textContent.length!==n)tx.textContent=l.text.slice(0,n);}
+      else{c.entry.className='tline buffered';c.entry.querySelector('.tx').textContent='Записва се локално…';}}
+    if(p>=1){finishLine(c);sim.cur=null;}}
+  updateMetrics();
+}
+function reconnect(){if(!sim.pending.length&&sim.buffer<=0)return;
+  sys('Връзката е възстановена · буферът ('+fmt(sim.buffer)+') се изпраща и транскрибира');
+  for(const p of sim.pending){p.e.className='tline'+(p.wake?' wake':'');p.e.querySelector('.tx').textContent=p.text;}
+  sim.pending=[];sim.buffer=0;[2,3,4,5,6].forEach((i,k)=>setTimeout(()=>pulse(i),k*90));renderMinutes(sim.done);}
+
+function setMinChip(cls,text){$('#min-chip').innerHTML='<span class="dot '+cls+'"></span>'+text;}
+function renderMinutes(final){
+  const pend=new Set(sim.pending.map(p=>p.text));
+  const ok=src=>src.every(id=>sim.final[id]&&sim.captured[id]&&!pend.has(LINES.find(l=>l.id===id).text));
+  const body=$('#min-body');const prev=sim.shown;const out=[];
+  const sec=(title,items,fmtItem)=>{const vis=items.filter(i=>ok(i.src));if(!vis.length)return;
+    out.push('<div><h3>'+title+'</h3><ul>'+vis.map(i=>{const key=title+i.text;const isNew=!prev.has(key);prev.add(key);return '<li'+(isNew?' class="new"':'')+'>'+fmtItem(i)+'</li>';}).join('')+'</ul></div>');};
+  sec('Решения',MIN.decisions,i=>'<span>'+i.text+'</span>');
+  sec('Задачи',MIN.actions,i=>'<span>'+i.text+'</span><span class="meta">'+ownerName(i.who)+' · срок '+i.due+'</span>');
+  sec('Отворени въпроси',MIN.open,i=>'<span>'+i.text+'</span>');
+  const missed=LINES.filter(l=>sim.captured[l.id]===false).length;
+  if(missed)out.push('<p class="warnbox">'+missed+' '+(missed===1?'реплика не е записана':'реплики не са записани')+', защото микрофоните бяха изключени. Свързаните с тях решения липсват.</p>');
+  if(sim.pending.length)out.push('<p class="warnbox">'+sim.pending.length+' '+(sim.pending.length===1?'реплика чака':'реплики чакат')+' връзка, за да бъдат транскрибирани.</p>');
+  if(!out.length)out.push('<p class="empty">Още няма решения. Bix слуша.</p>');
+  if(final)out.push('<p class="foot">Изпратено на 4 участника · съхранение: '+REGION[S.region]+' · изтрива се след '+S.retention+' дни · пример</p>');
+  body.innerHTML=out.join('');
+  setMinChip(final?'ok':'acc',final?'Финални':'Чернова на живо');$('#min-title').textContent=final?'Минути · финални':'Минути';}
+
+function faceState(){
+  if(!sim.started)return{mode:'idle'};
+  if(sim.muted&&!sim.done)return{mode:'muted'};
+  if(sim.t<sim.thinkUntil)return{mode:'think'};
+  if(sim.answer&&sim.t<sim.answer.until)return{mode:'answer',text:sim.answer.text};
+  if(sim.done)return{mode:'done'};
+  return{mode:'listen'};}
+
+function updateMetrics(){
+  $('#m-time').textContent=fmt(sim.t||0);
+  const b=sim.bytes||0;$('#m-data').textContent=b<1e6?(b/1000).toFixed(1)+' KB':(b/1e6).toFixed(2)+' MB';
+  $('#m-lat').textContent=sim.lat?sim.lat.toFixed(2).replace('.',',')+' s':'—';
+  $('#m-buf').textContent=fmt(sim.buffer||0);
+  let net,dot='ok';
+  if(sim.netDown&&S.conn==='lte'){net='LTE резерва';dot='warn';}
+  else if(netOffline()){net='Няма връзка';dot='bad';}
+  else net={poe:'PoE · 1 Gb/s',wifi:'Wi-Fi · −54 dBm',lte:'Wi-Fi · −54 dBm'}[S.conn];
+  $('#m-net').textContent=net;$('#c-net').textContent=(netOffline()?'Без връзка':net.split(' · ')[0]+' · онлайн');$('#c-net-dot').className='dot '+dot;
+  const rec=sim.started&&!sim.done&&sim.recording;
+  $('#c-rec').textContent=sim.muted&&sim.started&&!sim.done?'Микрофоните са изключени':rec?'Записва · '+fmt(sim.t):sim.done?'Срещата приключи':'Не записва';
+  $('#c-rec-dot').className='dot '+(sim.muted&&rec?'bad':rec?'acc':sim.done?'ok':'');
+  renderPipelineState();}
+
+/* ---------- pipeline ---------- */
+function stages(){
+  const net={poe:['Ethernet PoE+','1 Gb/s · 802.1X','мрежа'],wifi:['Wi-Fi 6','WPA3-Enterprise','мрежа'],lte:['Wi-Fi + LTE','LTE поема при отпадане','мрежа']}[S.conn];
+  const reg=REGION[S.region];
+  return[['Микрофони','XVF3800 · ехо и шум премахнати','устройство'],['Bix · Pi 5','реч, дума „Bix“ · Opus 24 kbps','устройство'],net,
+    ['IoT шлюз','MQTT · TLS 1.3 · сертификат','облак · '+reg],['Реч → текст','стрийминг · bg-BG · говорещи','облак · '+reg],
+    ['Езиков модел','решения, задачи, въпроси','облак · '+reg],['Минути','имейл · календар · '+S.retention+' дни','облак · '+reg]];}
+function renderPipeline(){$('#pipeline').innerHTML=stages().map((s,i)=>'<div class="st"><span class="n">'+String(i+1).padStart(2,'0')+'</span><b>'+s[0]+'</b><div class="sub">'+s[1]+'</div><div class="where">'+s[2]+'</div></div>').join('');renderPipelineState();}
+function renderPipelineState(){const els=$('#pipeline').children;if(!els.length)return;
+  for(const e of els)e.classList.remove('down','fail');
+  if(sim.muted&&sim.started&&!sim.done){els[0].classList.add('down');els[0].querySelector('.sub').textContent='изключени с бутона';}
+  else els[0].querySelector('.sub').textContent=stages()[0][1];
+  if(netOffline()){for(let i=2;i<7;i++)els[i].classList.add('down');els[2].querySelector('.sub').textContent='няма връзка · буфер на устройството';}
+  else if(sim.netDown&&S.conn==='lte'){els[2].classList.add('fail');els[2].querySelector('.sub').textContent='Wi-Fi отпадна · LTE активен';}
+  else els[2].querySelector('.sub').textContent=stages()[2][1];}
+
+/* ---------- spec + checks ---------- */
+function renderSpec(){
+  const shell={matte:['Матов PC/ABS','шприцоване за серия; SLS печат за прототипи'],alu:['Анодизиран алуминий','CNC; изисква прозорец за антената'],fabric:['Акустичен текстил върху PC рамка','звукът минава свободно; сменяем калъф']}[S.material];
+  const net={poe:['PoE+ HAT, 802.3at','един кабел за мрежа и захранване'],wifi:['Wi-Fi 6, 2,4/5 GHz','без кабел; нужен 802.1X сертификат'],lte:['Wi-Fi 6 + LTE Cat-4 модем','поема при отпадане на Wi-Fi; нужна SIM карта']}[S.conn];
+  const power=S.conn==='poe'?['PoE+ (до 25,5 W)','Pi 5, дисплей и високоговорител надхвърлят бюджета на обикновен PoE']:['USB-C 27 W (5 V / 5 A)','официалното захранване за Pi 5'];
+  const rows=[
+    ['Микрофони','ReSpeaker USB масив, XVF3800','4 мик. с вграден DSP: премахва ехото от собствения високоговорител, насочва се към говорещия, дава посока'],
+    ['Компютър','Raspberry Pi 5, 2 GB','тежката работа е в облака; локално остават откриване на реч, дума за събуждане и компресия'],
+    ['Дисплей',S.form==='orb'?'Кръгъл 4″ тъч':'7″ IPS тъч','старт и стоп с допир, статус, отговори'],
+    ['Присъствие','mmWave радар 24 GHz','PIR не вижда хора, които седят неподвижно; радарът ги вижда'],
+    ['Звук','Високоговорител 3 W','усилвателят е в микрофонния масив; там се маха и ехото'],
+    ['Мрежа',net[0],net[1]],['Захранване',power[0],power[1]],
+    ['Сигурност','Подписан boot · криптиран диск · защитен чип ATECC608','ключът на устройството не може да се извади'],
+    ['Корпус',shell[0],shell[1]],
+    ['Индикатори','12 LED + бутон Mute на масива','пръстенът свети към говорещия; Mute изключва микрофоните в DSP чипа, независимо от Pi']];
+  $('#bom').innerHTML=rows.map(r=>'<tr><td>'+r[0]+'</td><td>'+r[1]+'</td><td><small>'+r[2]+'</small></td></tr>').join('');
+  const ck=[];const it=(st,t,s)=>ck.push('<li><span class="dot '+st+'"></span><span>'+t+(s?'<small>'+s+'</small>':'')+'</span></li>');
+  it('ok','Криптиране при пренос','TLS 1.3 и отделен сертификат за всяко устройство');
+  it('ok','Мрежова автентикация 802.1X',S.conn==='poe'?'по кабел':'WPA3-Enterprise');
+  it('ok','Данни в ЕС',REGION[S.region]+(S.region==='private'?' · клиентът поддържа инфраструктурата':''));
+  it('ok','Задържане '+S.retention+' дни','автоматично изтриване на запис и транскрипция');
+  it('ok','Видим индикатор за запис','LED пръстен и банер на екрана при старт');
+  it('ok','Хардуерен бутон за микрофоните','в DSP чипа на масива, Pi не може да го заобиколи · по желание ключ, който прекъсва захранването');
+  if(S.speakerId==='voice')it('warn','Гласови профили','биометрични данни по чл. 9 GDPR · нужно изрично писмено съгласие');
+  else it('ok','Без биометрия',S.speakerId==='anon'?'говорещите са анонимни':'имената идват от поканата в календара');
+  if(S.material==='alu'&&S.conn!=='poe')it('warn','Метален корпус и Wi-Fi','алуминият заглушава сигнала · нужен е прозорец за антената или PoE');
+  it(S.conn==='lte'?'ok':'acc','Работа без връзка',S.conn==='lte'?'автоматичен преход към LTE':'локален буфер до 2 ч. (≈ 22 MB при 24 kbps)');
+  it('ok','Обновявания по въздуха','подписани пакети, поетапно по групи зали');
+  $('#checks').innerHTML=ck.join('');
+  const w=$('#mat-warn');if(S.material==='alu'&&S.conn!=='poe'){w.hidden=false;w.textContent='Алуминиевият корпус заглушава Wi-Fi. Изберете PoE в „Организация“ или предвидете пластмасов прозорец за антената.';}else w.hidden=true;
+  $('#form-hint').textContent=FORM_HINT[S.form];
+  $('#conn-hint').textContent={poe:'Препоръчително за заседателни зали: един кабел за мрежа и ток, без проблеми с корпоративния Wi-Fi.',wifi:'Без кабел. ИТ трябва да издаде сертификат за 802.1X на всяко устройство.',lte:'Wi-Fi с резервна мобилна връзка. Пробвайте „Прекъсни мрежата“ в симулацията.'}[S.conn];
+  $('#spk-hint').textContent={calendar:'Имената идват от поканата, посоката от микрофоните. Не се пазят гласове.',voice:'Най-точно, но гласовете са биометрични данни. Всеки участник трябва да даде съгласие.',anon:'„Говорещ 1, 2…“. Най-малко лични данни.'}[S.speakerId];
+  $('#c-cloud').textContent='Облак: '+REGION[S.region];
+  $('#color-name').textContent=COLOR_NAMES[S.color];
+}
+
+/* ---------- controls ---------- */
+function setKey(key,v){
+  if(key==='speed'){S.speed=+v;}else S[key]=v;
+  $$('[data-key="'+key+'"] [data-v]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.v===String(v))));
+  if(HAS3D&&['form','material','color','conn'].includes(key))buildBix();
+  if(key==='color'&&typeof bpColor==='function')bpColor();
+  if(key==='conn'||key==='region'||key==='retention')renderPipeline();
+  if(key==='speakerId'&&sim.started){renderMinutes(sim.done);}
+  renderSpec();updateMetrics();}
+$$('[data-key]').forEach(g=>g.addEventListener('click',e=>{const b=e.target.closest('[data-v]');if(b)setKey(g.dataset.key,b.dataset.v);}));
+$('#autorot').addEventListener('change',e=>{S.autorot=e.target.checked;});
+if(reduce)$('#autorot').checked=false;
+$('#tab-d').onclick=()=>tab('d');$('#tab-c').onclick=()=>tab('c');
+function tab(t){$('#tab-d').setAttribute('aria-selected',String(t==='d'));$('#tab-c').setAttribute('aria-selected',String(t==='c'));$('#pane-d').hidden=t!=='d';$('#pane-c').hidden=t!=='c';}
+$('#explode').onclick=()=>{S.exploded=!S.exploded;$('#explode').setAttribute('aria-pressed',String(S.exploded));$('#explode').textContent=S.exploded?'Сглоби':'Разглоби';
+  if(S.exploded&&S.scene==='room')setScene('studio');else setSceneView();};
+function setScene(s){S.scene=s;$('#scene-btn').textContent=s==='room'?'Студио':'Заседателна зала';
+  if(HAS3D){room.visible=s==='room';shadowPlane.visible=s==='studio';}setSceneView();
+  $('#stage-title').textContent=(s==='room'?'Заседателна зала':'Студио')+' · '+S.form.toUpperCase();}
+$('#scene-btn').onclick=()=>setScene(S.scene==='room'?'studio':'room');
+function updatePlay(){const t=sim.done?'Пусни отново':sim.running?'Пауза':sim.started?'Продължи':'Пусни';$('#play').textContent=t;
+  $('#stage-play').textContent=sim.running?'Пауза':sim.done?'Пусни симулацията отново':sim.started?'Продължи симулацията':'Пусни симулация на среща';}
+function togglePlay(){if(sim.done)resetSim();
+  if(!sim.running){sim.running=true;sim.started=true;if(S.exploded){S.exploded=false;$('#explode').setAttribute('aria-pressed','false');$('#explode').textContent='Разглоби';}if(S.scene!=='room')setScene('room');}
+  else sim.running=false;updatePlay();}
+$('#play').onclick=togglePlay;$('#stage-play').onclick=togglePlay;
+$('#restart').onclick=()=>{resetSim();togglePlay();};
+$('#mute').onclick=()=>{sim.muted=!sim.muted;$('#mute').setAttribute('aria-pressed',String(sim.muted));$('#mute').textContent=sim.muted?'Включи микрофоните':'Изключи микрофоните';
+  if(sim.started&&!sim.done)sys(sim.muted?'Хардуерният бутон е натиснат · микрофоните са изключени в DSP чипа · пръстенът свети червено':'Микрофоните са включени отново');updateMetrics();};
+$('#netdrop').onclick=()=>{const was=netOffline();sim.netDown=!sim.netDown;$('#netdrop').setAttribute('aria-pressed',String(sim.netDown));$('#netdrop').textContent=sim.netDown?'Възстанови мрежата':'Прекъсни мрежата';
+  if(sim.started&&!sim.done){if(sim.netDown)sys(S.conn==='lte'?'Wi-Fi отпадна · LTE модемът пое връзката без прекъсване':'Мрежата отпадна · Bix продължава да записва в локален буфер');
+    else if(was)reconnect();else sys('Wi-Fi се върна · трафикът минава отново през Wi-Fi');}updateMetrics();};
+
+
+/* ================= blueprint ================= */
+const BP={power:'poe',lte:'no',qty:1};
+const eur=v=>'€'+v.toLocaleString('bg-BG',{minimumFractionDigits:2,maximumFractionDigits:2});
+const V='<span class="src v">проверено</span>', E='<span class="src e">оценка</span>';
+const L=(t,u)=>u?'<a href="'+u+'" target="_blank" rel="noopener">'+t+'</a>':t;
+// kit: брой устройства, които покрива една опаковка; cont: непрекъснато количество (кг)
+const ITEMS=[
+ {n:'Raspberry Pi 5 · 2 GB',q:1,p:84.00,bg:L('Erelement','https://erelement.com/category/development/raspberry-pi/raspberry-pi-5/')+' €84,00 '+V+'<br><small>нямаше наличност на 10.10 · 4 GB е €138</small>',ab:'официална цена $77,50 от 1.10.2026 · в ЕС ≈ €88 '+E},
+ {n:'reSpeaker XVF3800 USB, 4 микрофона',q:1,p:61.00,bg:'<small>не е намерен</small>',ab:L('The Pi Hut','https://thepihut.com/products/respeaker-xmos-xvf3800-ai-powered-4-mic-array-for-clear-voice-even-in-noise')+' £52,80 '+V+'<br><small>с ДДС при внос ≈ €61 · OpenELAB $59,99</small>'},
+ {n:'Raspberry Pi Touch Display 2 · 7″',q:1,p:80.13,bg:'<small>не е намерен в Erelement</small>',ab:L('raspberrypi.dk','https://raspberrypi.dk/en/?p=235144')+' €80,13 '+V+'<br><small>FFC кабели и винтове са в комплекта</small>'},
+ {n:'Waveshare PoE+ HAT (F) за Pi 5',q:1,p:22.00,only:'poe',bg:L('Erelement','https://erelement.com/category/development/raspberry-pi/raspberry-pi-5/')+' €22,00 '+V,ab:L('Grobotronics','https://grobotronics.com/power-over-ethernet-poe-hat-for-raspberry-pi-5.html?sl=en')+' €29,90 '+V},
+ {n:'Захранване USB-C 27 W (официално)',q:1,p:15.30,only:'usb',bg:L('Erelement','https://erelement.com/category/development/raspberry-pi/raspberry-pi-5/')+' €15,30 '+V+'<br><small>нямаше наличност</small>',ab:'Elektor ≈ €15 '+E},
+ {n:'USB-C панелна букса с удължител',q:1,p:4.00,only:'usb',bg:'≈ €4 '+E,ab:'AliExpress ≈ €2 '+E},
+ {n:'HLK-LD2410C mmWave радар',q:1,p:3.00,bg:'≈ €6 '+E,ab:'AliExpress ≈ €3 '+E+'<br><small>'+L('Electrokit','https://www.electrokit.com/en/ld2410c-human-presence-sensor-24ghz-radar')+' 89 SEK ≈ €8 '+V+'</small>'},
+ {n:'Говорител 3 W · 4 Ω · Ø40',q:1,p:3.00,bg:'≈ €3 '+E,ab:'AliExpress ≈ €1,5 '+E},
+ {n:'Adafruit ATECC608 (STEMMA QT) + кабел',q:1,p:6.00,bg:'<small>не е намерен</small>',ab:L('The Pi Hut','https://thepihut.com/products/adafruit-atecc608-breakout-board-stemma-qt-qwiic-ada4314')+' £4,80 '+V+'<br><small>изчерпан към момента</small>'},
+ {n:'microSD 32 GB High Endurance',q:1,p:10.00,bg:'≈ €10 '+E,ab:'—'},
+ {n:'USB-A → USB-C кабел 15 см, ъглов',q:1,p:4.00,bg:'≈ €4 '+E,ab:'AliExpress ≈ €2 '+E},
+ {n:'Keystone Cat6 F/F + пач 15 см',q:1,p:5.00,bg:'≈ €5 '+E,ab:'—'},
+ {n:'Месингови втулки M3 · 100 бр.',kit:10,p:8.00,bg:'≈ €8 '+E,ab:'AliExpress ≈ €4 '+E},
+ {n:'Винтове M3 (8 / 10 / 16 мм), асорти',kit:10,p:6.00,bg:'≈ €6 '+E,ab:'—'},
+ {n:'Стойки и винтове M2.5 · 120 бр.',kit:10,p:14.97,bg:L('Erelement','https://erelement.com/category/development/raspberry-pi/raspberry-pi-5/')+' €14,97 '+V,ab:'—'},
+ {n:'Гумени крачета Ø10 · 20 бр.',kit:5,p:4.00,bg:'≈ €4 '+E,ab:'—'},
+ {n:'PETG филамент 1 кг (≈ 0,69 кг на брой)',cont:.69,p:29.95,bg:'≈ €22–28 '+E,ab:L('Makerpoint','https://www.makerpoint.nl/en-gb/3d-printing/consumables/filament/polymaker-polylite-petg-black-1-75mm-1kg-210000007442')+' Polymaker €29,95 '+V},
+ {n:'LTE модем Waveshare SIM7600E-H (USB)',q:1,p:90.00,only:'lte',bg:'<small>не е намерен</small>',ab:L('Waveshare','https://www.waveshare.com/sim7600e-h-4g-dongle.htm')+' $87,99 '+V+'<br><small>с ДДС при внос ≈ €90 · + SIM карта</small>'}
+];
+function bomCount(it,n){if(it.kit)return Math.ceil(n/it.kit);if(it.cont)return Math.ceil(it.cont*n);return it.q*n;}
+function bomOn(it,st){if(!it.only)return true;if(it.only==='lte')return st.lte==='yes';return it.only===st.power;}
+function bomTotal(n,st){return ITEMS.filter(it=>bomOn(it,st)).reduce((s,it)=>s+bomCount(it,n)*it.p,0);}
+function renderBOM(){
+  const n=BP.qty;let rows='';
+  for(const it of ITEMS){const on=bomOn(it,BP),c=bomCount(it,n);
+    rows+='<tr class="'+(on?'':'off')+(it.only?' opt':'')+'"><td>'+it.n+'</td><td class="num">'+c+(it.cont?' кг':'')+'</td><td><small>'+it.bg+'</small></td><td><small>'+it.ab+'</small></td><td class="num">'+eur(it.p)+'</td><td class="num">'+eur(c*it.p)+'</td></tr>';}
+  $('#bp-rows').innerHTML=rows;
+  const t=bomTotal(n,BP);$('#bp-total').textContent=eur(t);$('#bp-per').textContent=eur(t/n);$('#bp-qn').textContent=n;
+  $('#k-unit').textContent='≈ '+eur(bomTotal(1,{power:'poe',lte:'no'})).replace(',00','');
+  $('#r-p0').textContent='≈ '+eur(bomTotal(2,{power:'poe',lte:'no'}));
+  $('#r-p3').textContent='≈ '+eur(bomTotal(5,{power:'poe',lte:'no'})+150);
+}
+$$('[data-bp]').forEach(g=>g.addEventListener('click',e=>{const b=e.target.closest('[data-v]');if(!b)return;BP[g.dataset.bp]=b.dataset.v;
+  g.querySelectorAll('[data-v]').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));renderBOM();}));
+$('#bp-qty').addEventListener('input',e=>{const v=Math.max(1,Math.min(500,parseInt(e.target.value,10)||1));BP.qty=v;renderBOM();});
+renderBOM();
+
+/* ---- parts list + STL viewer ---- */
+const PARTS=[
+ {k:'shell',f:'bix_crt_shell.stl',size:'214 × 176 × 140',col:'основен',g:377,h:13,ex:[0,0,0]},
+ {k:'bezel',f:'bix_crt_bezel.stl',size:'214 × 176 × 12',col:'основен',g:127,h:4.5,ex:[0,0,95]},
+ {k:'top_cap',f:'bix_crt_top_cap.stl',size:'132 × 132 × 25',col:'прозрачен',g:89,h:4.5,ex:[0,80,0]},
+ {k:'base',f:'bix_crt_base.stl',size:'190 × 120 × 14',col:'черен',g:96,h:3.5,ex:[0,-55,0]},
+ {k:'display_clamp_x4',f:'bix_crt_display_clamp_x4.stl',size:'18 × 9 × 2,4',col:'черен',g:2,h:.5,ex:null},
+ {k:'xvf_clamp_x4',f:'bix_crt_xvf_clamp_x4.stl',size:'14 × 14 × 2,4',col:'черен',g:1,h:.5,ex:null}];
+$('#bp-parts').innerHTML=PARTS.map(p=>'<tr data-k="'+p.k+'"><td>'+p.f+'</td><td class="mono">'+p.size+'</td><td>'+p.col+'</td><td class="num mono">'+p.g+'</td><td class="num mono">'+String(p.h).replace('.',',')+'</td></tr>').join('');
+const BV={sel:null,ex:0,exGoal:0,int:true,xr:false,meshes:{},ready:false};
+$('#bp-parts').addEventListener('click',e=>{const tr=e.target.closest('tr');if(!tr)return;const k=tr.dataset.k;BV.sel=BV.sel===k?null:k;
+  $$('#bp-parts tr').forEach(r=>r.classList.toggle('sel',r.dataset.k===BV.sel));bpStyle();});
+$('#bp-ex').onclick=()=>{BV.exGoal=BV.exGoal?0:1;$('#bp-ex').setAttribute('aria-pressed',String(!!BV.exGoal));$('#bp-ex').textContent=BV.exGoal?'Сглоби':'Разглоби';bpKick();};
+$('#bp-int').onclick=()=>{BV.int=!BV.int;$('#bp-int').setAttribute('aria-pressed',String(BV.int));bpStyle();};
+$('#bp-xr').onclick=()=>{BV.xr=!BV.xr;$('#bp-xr').setAttribute('aria-pressed',String(BV.xr));bpStyle();};
+
+let bpR,bpScene,bpCam,bpRoot,bpInt,bpVis=false,bpNeed=true;
+const bpView={th:.65,ph:1.18,r:620};
+function bpKick(){bpNeed=true;}
+function bpStyle(){if(!BV.ready)return;
+  for(const p of PARTS){const m=BV.meshes[p.k];if(!m)continue;const dim=BV.sel&&BV.sel!==p.k;
+    const xr=BV.xr&&(p.k==='shell'||p.k==='bezel')&&!BV.sel;
+    m.material.opacity=dim?.12:xr?.22:(p.k==='top_cap'?.9:1);m.material.transparent=m.material.opacity<1;m.material.depthWrite=m.material.opacity>.5;}
+  bpInt.visible=BV.int;bpKick();}
+function bpColor(){if(BV.meshes.shell){const c=COLORS[S.color];BV.meshes.shell.material.color.setHex(c);BV.meshes.bezel.material.color.setHex(c);bpKick();}}
+function initBP(){
+  if(!HAS3D){$('#bp-msg').textContent='3D прегледът не се зареди. STL файловете са в пакета.';return;}
+  const cv=$('#bp-gl');bpR=new THREE.WebGLRenderer({canvas:cv,antialias:true,alpha:true});bpR.setPixelRatio(Math.min(devicePixelRatio,2));
+  bpR.outputEncoding=THREE.sRGBEncoding;
+  bpScene=new THREE.Scene();bpCam=new THREE.PerspectiveCamera(30,1,5,4000);
+  bpScene.add(new THREE.HemisphereLight(0xffffff,0x8a939c,.75));
+  const dl=new THREE.DirectionalLight(0xffffff,.75);dl.position.set(300,500,400);bpScene.add(dl);
+  const dl2=new THREE.DirectionalLight(0xffffff,.3);dl2.position.set(-400,200,-300);bpScene.add(dl2);
+  bpRoot=new THREE.Group();bpRoot.position.set(0,-82,68);bpScene.add(bpRoot);
+  // вътрешни компоненти (координати на сглобката: x, y=дълбочина, z=височина)
+  bpInt=new THREE.Group();bpRoot.add(bpInt);
+  const bx=(x0,x1,y0,y1,z0,z1,col,o)=>{const m=new THREE.Mesh(new THREE.BoxGeometry(x1-x0,z1-z0,y1-y0),new THREE.MeshStandardMaterial(Object.assign({color:col,roughness:.6,metalness:.1},o||{})));
+    m.position.set((x0+x1)/2,(z0+z1)/2,-(y0+y1)/2);bpInt.add(m);return m;};
+  bx(-94.75,94.75,0,15,25,145,0x0e1114);                       // дисплей
+  bx(-77.75,77.75,-.2,.4,41,129,0x24414f,{emissive:0x0d3b44,emissiveIntensity:.6}); // видима площ
+  bx(-42.5,42.5,16,34,57,113,0x1f6b45);                         // Pi 5
+  bx(-35,35,34,50,58,114,0x18402c);                             // PoE HAT
+  bx(-54,54,20,128,156,172,0x2a7a50);                           // XVF3800
+  bx(-18,18,.5,3,5.5,22.5,0x2f6d8a);                            // радар
+  bx(-47.5,-32.5,118,140,32,48,0xd6d9dc);                       // keystone
+  const sp=new THREE.Mesh(new THREE.CylinderGeometry(20,20,20,40),new THREE.MeshStandardMaterial({color:0x222,roughness:.5}));
+  sp.rotation.z=Math.PI/2;sp.position.set(94,62,-100);bpInt.add(sp);
+  let left=0;
+  const MAT={shell:COLORS[S.color],bezel:COLORS[S.color],top_cap:0xf2f4f5,base:0x1d2124};
+  for(const p of PARTS){if(!p.ex)continue;left++;
+    fetch('stl/asm_'+p.f.replace('.stl','.json')).then(r=>{if(!r.ok)throw 0;return r.json();}).then(d=>{
+      const gi=new THREE.BufferGeometry();gi.setAttribute('position',new THREE.Float32BufferAttribute(Float32Array.from(d.v,x=>x*d.s),3));
+      gi.setIndex(d.f);gi.rotateX(-Math.PI/2);const geo=gi.toNonIndexed();gi.dispose();geo.computeVertexNormals();
+      const m=new THREE.Mesh(geo,new THREE.MeshStandardMaterial({color:MAT[p.k],roughness:p.k==='top_cap'?.35:.62,metalness:.02,side:THREE.DoubleSide}));
+      m.userData.ex=p.ex;bpRoot.add(m);BV.meshes[p.k]=m;
+      if(--left===0){BV.ready=true;$('#bp-msg').hidden=true;bpStyle();}}).catch(()=>{$('#bp-msg').textContent='3D прегледът не се зареди тук. STL файловете са в пакета.';});}
+  // orbit
+  let drag=null;
+  cv.addEventListener('pointerdown',e=>{drag={x:e.clientX,y:e.clientY,t:e.pointerType==='touch'};cv.setPointerCapture(e.pointerId);});
+  cv.addEventListener('pointermove',e=>{if(!drag)return;const dx=e.clientX-drag.x,dy=e.clientY-drag.y;drag.x=e.clientX;drag.y=e.clientY;
+    bpView.th-=dx*.008;if(!drag.t)bpView.ph=Math.min(1.6,Math.max(.25,bpView.ph-dy*.006));bpLast=performance.now();bpKick();});
+  const end=()=>{drag=null;};cv.addEventListener('pointerup',end);cv.addEventListener('pointercancel',end);
+  new IntersectionObserver(es=>{bpVis=es[0].isIntersecting;if(bpVis)bpKick();}).observe($('#bp-stage'));
+  requestAnimationFrame(bpFrame);
+}
+let bpLast=0,bpT=performance.now();
+function bpFrame(now){requestAnimationFrame(bpFrame);const dt=Math.min(.05,(now-bpT)/1000);bpT=now;if(!bpVis)return;
+  const spin=!reduce&&now-bpLast>4000&&S.autorot;if(spin){bpView.th+=dt*.25;bpNeed=true;}
+  if(Math.abs(BV.exGoal-BV.ex)>.001){BV.ex+=(BV.exGoal-BV.ex)*Math.min(1,dt*6);bpNeed=true;}else BV.ex=BV.exGoal;
+  if(!bpNeed)return;bpNeed=false;
+  const cv=bpR.domElement,w=cv.clientWidth,h=cv.clientHeight;if(cv.width!==Math.round(w*bpR.getPixelRatio())||cv.height!==Math.round(h*bpR.getPixelRatio())){bpR.setSize(w,h,false);bpCam.aspect=w/h;bpCam.updateProjectionMatrix();}
+  const r=bpView.r*(w/h<1?1.35:1)*(1+BV.ex*.35);
+  bpCam.position.set(r*Math.sin(bpView.ph)*Math.sin(bpView.th),r*Math.cos(bpView.ph)+20,r*Math.sin(bpView.ph)*Math.cos(bpView.th));bpCam.lookAt(0,10,0);
+  for(const k in BV.meshes){const m=BV.meshes[k],e=m.userData.ex;m.position.set(e[0]*BV.ex,e[1]*BV.ex,e[2]*BV.ex);}
+  bpInt.position.set(0,0,BV.ex*40);
+  bpR.render(bpScene,bpCam);}
+
+const mo=new MutationObserver(applyTheme);mo.observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change',applyTheme);
+
+resetSim();renderPipeline();renderSpec();
+if(HAS3D){init3D();applyTheme();}
+initBP();
+if(document.fonts&&document.fonts.ready)document.fonts.ready.then(()=>drawFace(performance.now()/1000));
+requestAnimationFrame(frame);
+})();
+</script>
+</html>
