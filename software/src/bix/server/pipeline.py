@@ -17,6 +17,7 @@ from sqlalchemy import delete, select
 
 from bix.common import audio as au
 from bix.common.audio import fmt_ts
+from bix.server import glossary
 from bix.server import minutes as minutes_mod
 from bix.server import speakers as spk
 from bix.server import stt as stt_mod
@@ -159,7 +160,9 @@ def step_stt(srv: Server, mid: str) -> dict[str, Any]:
         org = s.get(Org, m.org_id)
         room = s.get(Room, m.room_id) if m.room_id else None
         language = org.setting("language")
-        hints = [a.get("name", "") for a in m.attendees or []]
+        # the glossary first: Whisper's prompt is short, the terms matter most
+        hints = glossary.hints(glossary.parse(org.setting("glossary")))
+        hints += [a.get("name", "") for a in m.attendees or []]
         hints += [p.name for p in s.scalars(select(Person).where(Person.org_id == m.org_id)).all()]
         if room:
             hints.append(room.name)
@@ -167,7 +170,7 @@ def step_stt(srv: Server, mid: str) -> dict[str, Any]:
     audio = au.decode(srv.storage.get(key(org_id, mid, "audio.flac")))
     transcriber = stt_mod.make(srv.cfg)
     t0 = time.time()
-    hints = [h for h in hints if h]
+    hints = list(dict.fromkeys(h for h in hints if h))
     fallback_note = ""
     try:
         segments = transcriber.transcribe(audio, language, hints=hints)
@@ -196,8 +199,11 @@ def step_speakers(srv: Server, mid: str) -> dict[str, Any]:
         org = s.get(Org, m.org_id)
         mode = org.setting("speaker_mode")
         org_id = m.org_id
+        terms = glossary.parse(org.setting("glossary"))
         people = [(p.id, np.array(p.embedding, dtype=np.float32), p.name) for p in s.scalars(select(Person).where(Person.org_id == org_id)).all() if p.embedding and p.consent_at]
         previous = {x["label"]: x for x in (m.speakers or []) if x.get("source") == "user"}
+        # people on the calendar: an upper bound for the number of voices (+1 for a guest)
+        invited = len([x for x in m.attendees or [] if x.get("email") or x.get("name")])
     raw = json.loads(srv.storage.get(key(org_id, mid, "stt.json")))
     segments = [_seg(d) for d in raw["segments"]]
     audio = au.decode(srv.storage.get(key(org_id, mid, "audio.flac")))
@@ -211,9 +217,11 @@ def step_speakers(srv: Server, mid: str) -> dict[str, Any]:
     else:
         turns = spk.diarize(audio, srv.cfg.models_dir, cfg)
     embs: dict[str, np.ndarray] = {}
+    clusters_found = 0
     if turns:
         embs = spk.speaker_embeddings(audio, turns, srv.cfg.models_dir, cfg)
-        turns = spk.merge_small(turns, embs, cfg.min_speaker_seconds)
+        clusters_found = len(embs)
+        turns = spk.merge_similar(turns, embs, cfg.merge_threshold, cfg.min_share, cfg.min_speaker_seconds, max_speakers=invited + 1 if invited >= 2 else 0)
         turns = spk.relabel_by_first_appearance(turns)
         embs = spk.speaker_embeddings(audio, turns, srv.cfg.models_dir, cfg)
         segments = spk.assign(segments, turns)
@@ -235,6 +243,7 @@ def step_speakers(srv: Server, mid: str) -> dict[str, Any]:
             entry.update(name="", source="", person_id="")
         speakers.append(entry)
 
+    fixed = glossary.fix_segments(segments, terms)  # after the speaker split, which rebuilds texts from words
     transcript = {"segments": [x.to_dict() for x in segments]}
     srv.storage.put(key(org_id, mid, "transcript.json"), json.dumps(transcript, ensure_ascii=False).encode(), "application/json")
     srv.storage.put(
@@ -246,7 +255,7 @@ def step_speakers(srv: Server, mid: str) -> dict[str, Any]:
         m = s.get(Meeting, mid)
         m.speakers = speakers
         m.transcript_text = "\n".join(x.text for x in segments)
-    return {"speakers": len(speakers), "recognized": len(matches)}
+    return {"speakers": len(speakers), "recognized": len(matches), **({"clusters": clusters_found} if turns else {}), **({"glossary_fixes": fixed} if fixed else {})}
 
 
 def step_minutes(srv: Server, mid: str) -> dict[str, Any]:
@@ -264,6 +273,7 @@ def step_minutes(srv: Server, mid: str) -> dict[str, Any]:
             "calendar_subject": "" if m.title_auto else m.title,
             "attendees": [a.get("name") or a.get("email") for a in m.attendees or []],
             "notes": [note_line(n) for n in m.notes or []],
+            "glossary": glossary.prompt_block(glossary.parse(org.setting("glossary"))),
         }
     if srv.cfg.llm.provider == "none":
         return {"skipped": "без езиков модел"}
@@ -432,11 +442,14 @@ def live_chunk(srv: Server, meeting_id: str, seq: int) -> None:
         m = s.get(Meeting, meeting_id)
         if not claimed or c is None or m is None:
             return
-        language = s.get(Org, m.org_id).setting("language")
+        org = s.get(Org, m.org_id)
+        language = org.setting("language")
+        terms = glossary.parse(org.setting("glossary"))
         chunk_key, offset = c.key, c.start_s
     try:
         audio = au.decode(srv.storage.get(chunk_key))
-        segs = stt_mod.make(srv.cfg).transcribe(audio, language)
+        segs = stt_mod.make(srv.cfg).transcribe(audio, language, hints=glossary.hints(terms) or None)
+        glossary.fix_segments(segs, terms)
     except Exception:
         with srv.db.session() as s:
             s.execute(update(Chunk).where(Chunk.meeting_id == meeting_id, Chunk.seq == seq).values(live_done=False))
@@ -456,7 +469,9 @@ def ask(srv: Server, meeting_id: str, question: str) -> dict[str, Any]:
 
     with srv.db.session() as s:
         m = s.get(Meeting, meeting_id)
-        language = s.get(Org, m.org_id).setting("language")
+        org = s.get(Org, m.org_id)
+        language = org.setting("language")
+        terms = glossary.prompt_block(glossary.parse(org.setting("glossary")))
         started = m.started_at
         todo = [c.seq for c in s.scalars(select(Chunk).where(Chunk.meeting_id == meeting_id, Chunk.live_done.is_(False)).order_by(Chunk.seq))]
     for seq in todo:
@@ -464,14 +479,14 @@ def ask(srv: Server, meeting_id: str, question: str) -> dict[str, Any]:
     with srv.db.session() as s:
         lines = [{"start": x.start_s, "text": x.text} for x in s.scalars(select(LiveSegment).where(LiveSegment.meeting_id == meeting_id).order_by(LiveSegment.start_s))]
     try:
-        result = minutes_mod.answer(srv.cfg.llm, question, lines, time.time() - started, language)
+        result = minutes_mod.answer(srv.cfg.llm, question, lines, time.time() - started, language, terms)
     except Exception as e:
         if not srv.cfg.llm.fallback_provider or srv.cfg.llm.provider == "none":
             raise
         import dataclasses
 
         log.warning("LLM %s failed for a question (%s); using fallback %s", srv.cfg.llm.provider, e, srv.cfg.llm.fallback_provider)
-        result = minutes_mod.answer(dataclasses.replace(srv.cfg.llm, provider=srv.cfg.llm.fallback_provider), question, lines, time.time() - started, language)
+        result = minutes_mod.answer(dataclasses.replace(srv.cfg.llm, provider=srv.cfg.llm.fallback_provider), question, lines, time.time() - started, language, terms)
     if result["kind"] != "answer" and result["note"]:
         add_note(srv, meeting_id, {"t": round(time.time() - started, 1), "kind": result["kind"], "text": result["note"], "owner": result["owner"], "due": result["due"], "asked": question})
     return result

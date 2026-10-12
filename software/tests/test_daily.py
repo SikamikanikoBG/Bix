@@ -294,3 +294,75 @@ def test_browser_device_room_page_and_wav_chunks(srv, client):
     drain(srv)
     m = client.get(f"/api/meetings/{mid}").json()
     assert m["status"] == "done" and round(m["duration_s"]) == 9  # the WAV was stored as FLAC and processed
+
+
+def test_glossary_parse_and_fix():
+    from bix.server import glossary
+    from bix.server.stt.base import Segment
+
+    g = glossary.parse(["Пощенска банка", "ДСК: ди ес ке, DSK", "Мария Петрова = мария петрова", "", "# бележка", "дск: дубликат"])
+    assert [e.term for e in g] == ["Пощенска банка", "ДСК", "Мария Петрова"]
+    assert glossary.fix("Говорихме с Ди Ес Ке и с dsk за DSKто.", g) == "Говорихме с ДСК и с ДСК за DSKто."  # whole words only
+    segs = [Segment(0, 1, "мария петрова каза"), Segment(1, 2, "нищо")]
+    assert glossary.fix_segments(segs, g) == 1 and segs[0].text == "Мария Петрова каза"
+    block = glossary.prompt_block(g)
+    assert "ДСК (may appear as: ди ес ке, DSK)" in block and "Пощенска банка" in block
+    assert glossary.prompt_block([]) == ""
+    import pytest
+
+    with pytest.raises(ValueError):
+        glossary.clean(["x" * 400])
+
+
+def test_glossary_reaches_settings_transcript_and_minutes(srv, client, monkeypatch):
+    from test_flow import record
+
+    from bix.server import minutes, pipeline
+
+    setup_admin(client)
+    r = client.patch("/api/settings", json={"settings": {"glossary": "ДСК: изречение\nПощенска банка, клон Витоша"}})
+    assert r.status_code == 200, r.text
+    assert r.json()["settings"]["glossary"] == ["ДСК: изречение", "Пощенска банка, клон Витоша"]  # commas stay inside a line
+    assert client.patch("/api/settings", json={"settings": {"glossary": ["x" * 400]}}).status_code == 400
+    _, token = enroll_device(client)
+    mid = record(client, token)
+    drain(srv)
+    seg = client.get(f"/api/meetings/{mid}/transcript").json()["segments"][0]
+    assert seg["text"].startswith("ДСК")  # "изречение" (the fake STT's word) was corrected by the glossary
+    seen = {}
+    srv.cfg.llm.provider = "vllm"
+    monkeypatch.setattr(minutes, "structured", lambda cfg, system, prompt, *a, **k: seen.update(prompt=prompt) or minutes.empty_minutes("x"))
+    pipeline.process(srv, mid, "minutes")
+    assert "Glossary of the organisation" in seen["prompt"] and "Пощенска банка, клон Витоша" in seen["prompt"]
+
+
+def test_one_person_one_label():
+    """Far microphone: each person is split into several similar clusters; merge them back."""
+    import numpy as np
+
+    from bix.server.speakers import Turn, merge_similar
+
+    rng = np.random.default_rng(1)
+    people = [rng.normal(size=192) for _ in range(3)]
+    embs, turns, t = {}, [], 0.0
+    n = 0
+    for p, base in enumerate(people):
+        for k in range(4):  # 4 clusters per person, like the 25-for-4 meeting
+            n += 1
+            lab = f"S{n}"
+            v = base + rng.normal(scale=0.35, size=192)
+            embs[lab] = (v / np.linalg.norm(v)).astype(np.float32)
+            secs = 120 if k == 0 else 30
+            turns.append(Turn(t, t + secs, lab))
+            t += secs
+    tiny = rng.normal(size=192)
+    embs["S99"] = (tiny / np.linalg.norm(tiny)).astype(np.float32)
+    turns.append(Turn(t, t + 5, "S99"))  # 5 s of something: not a person
+    out = merge_similar(turns, embs, 0.75, 0.025, 6.0)
+    assert len({x.label for x in out}) == 3
+    # different people are never merged by similarity alone...
+    distinct = {f"S{i}": (v / np.linalg.norm(v)).astype(np.float32) for i, v in enumerate(people)}
+    dturns = [Turn(i * 100, i * 100 + 100, f"S{i}") for i in range(3)]
+    assert len({x.label for x in merge_similar(dturns, distinct, 0.75, 0.025, 6.0)}) == 3
+    # ...but the calendar caps the count (invited + 1)
+    assert len({x.label for x in merge_similar(dturns, distinct, 0.75, 0.025, 6.0, max_speakers=2)}) == 2

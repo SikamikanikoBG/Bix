@@ -68,7 +68,9 @@ compute_type = "int8"
 provider = "sherpa"        # sherpa (local) | provider (Azure's labels) | none
 embedding_model = "nemo_en_titanet_small.onnx"
 threshold = 0.75           # higher = fewer speakers
-min_speaker_seconds = 6.0
+min_speaker_seconds = 3.0        # absolute minimum per voice
+merge_threshold = 0.75           # clusters at least this similar are one person (far mic, echo)
+min_share = 0.025                # a voice with less of the meeting's speech is folded into the closest one
 profile_match = 0.55
 num_threads = 4
 

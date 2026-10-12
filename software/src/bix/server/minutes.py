@@ -89,6 +89,8 @@ def build_prompt(segments: list[dict[str, Any]], names: dict[str, str], context:
         parts.append(f"Calendar subject: {context['calendar_subject']}")
     if context.get("attendees"):
         parts.append("Calendar attendees: " + ", ".join(context["attendees"]))
+    if context.get("glossary"):
+        parts.append(context["glossary"])
     if context.get("notes"):
         parts.append(
             "Marked in the room during the meeting (time from the start; tasks and decisions here were confirmed by the participants, include them):\n"
@@ -150,11 +152,11 @@ PRESETS = {
 }
 
 
-def answer(cfg: LlmCfg, question: str, lines: list[dict[str, Any]], now_s: float, language: str) -> dict[str, Any]:
+def answer(cfg: LlmCfg, question: str, lines: list[dict[str, Any]], now_s: float, language: str, glossary: str = "") -> dict[str, Any]:
     if cfg.provider == "none":
         raise MinutesError("Няма настроен езиков модел.")
     transcript = "\n".join(f"[{fmt_ts(x['start'])}] {x['text']}" for x in lines) or "(още няма разпознат текст)"
-    prompt = f"Now: {fmt_ts(now_s)} from the start of the meeting.\n\n<transcript>\n{transcript}\n</transcript>\n\nRequest: {question}"
+    prompt = (glossary + "\n\n" if glossary else "") + f"Now: {fmt_ts(now_s)} from the start of the meeting.\n\n<transcript>\n{transcript}\n</transcript>\n\nRequest: {question}"
     system = ASK_SYSTEM.replace("{language}", LANG_NAMES.get(language, language))
     data = structured(cfg, system, prompt, ASK_SCHEMA, max_tokens=2000, effort="low")
     kind = data.get("kind") if data.get("kind") in ("answer", "task", "decision", "note") else "answer"

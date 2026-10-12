@@ -120,6 +120,45 @@ def merge_small(turns: list[Turn], embs: dict[str, np.ndarray], min_seconds: flo
     return [Turn(t.start, t.end, remap.get(t.label, t.label)) for t in turns]
 
 
+def merge_similar(turns: list[Turn], embs: dict[str, np.ndarray], threshold: float, min_share: float, min_seconds: float,
+                  max_speakers: int = 0) -> list[Turn]:
+    """One person, one label. With a laptop or a table microphone in a real room, distance and
+    echo split one voice into many clusters (25 "speakers" for 4 people). Two steps:
+      1. merge the two most similar clusters (duration-weighted centroids) while they are
+         similar enough, or while there are more clusters than people on the calendar;
+      2. fold clusters with only a little speech (under min_share of the meeting) into the
+         most similar remaining voice: a real person says more than a few sentences."""
+    totals: dict[str, float] = {}
+    for t in turns:
+        totals[t.label] = totals.get(t.label, 0.0) + t.end - t.start
+    clusters = {lab: [[lab], e / (np.linalg.norm(e) + 1e-9), totals.get(lab, 0.0)] for lab, e in embs.items()}
+    if len(clusters) < 2:
+        return turns
+
+    def join(x: str, y: str) -> None:
+        a, b = clusters[x], clusters.pop(y)
+        c = a[1] * max(a[2], 1e-3) + b[1] * max(b[2], 1e-3)
+        clusters[x] = [a[0] + b[0], c / (np.linalg.norm(c) + 1e-9), a[2] + b[2]]
+
+    while len(clusters) > 1:
+        keys = list(clusters)
+        best = max(((float(clusters[x][1] @ clusters[y][1]), x, y) for i, x in enumerate(keys) for y in keys[i + 1:]))
+        if best[0] < threshold and not (max_speakers and len(clusters) > max_speakers):
+            break
+        big, small = (best[1], best[2]) if clusters[best[1]][2] >= clusters[best[2]][2] else (best[2], best[1])
+        join(big, small)
+    total = sum(c[2] for c in clusters.values()) or 1.0
+    floor = max(min_seconds, min_share * total)
+    keep = [k for k, c in clusters.items() if c[2] >= floor] or [max(clusters, key=lambda k: clusters[k][2])]
+    for k in [k for k in clusters if k not in keep]:
+        target = max(keep, key=lambda b: float(clusters[b][1] @ clusters[k][1]))
+        join(target, k)
+    remap = {member: key for key, c in clusters.items() for member in c[0]}
+    # labels without an embedding (too little audio to embed) go to the biggest voice
+    biggest = max(clusters, key=lambda k: clusters[k][2])
+    return [Turn(t.start, t.end, remap.get(t.label, biggest)) for t in turns]
+
+
 def relabel_by_first_appearance(turns: list[Turn]) -> list[Turn]:
     order: dict[str, str] = {}
     for t in sorted(turns, key=lambda t: t.start):

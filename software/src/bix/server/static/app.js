@@ -601,6 +601,9 @@ async function pageSettings() {
       <div class="row"><label class="f">Край на срещата след минути без реч (0 = изключено)<input type="number" name="auto_stop_silence_min" value="${v.auto_stop_silence_min}" min="0" ${dis}></label>
         <label class="f">Максимална продължителност (часове)<input type="number" name="max_meeting_hours" value="${v.max_meeting_hours}" min="1" ${dis}></label></div>
       <label class="f">Текст на екрана по време на запис (AI Act, чл. 50)<textarea name="notice_text" rows="2" ${dis}>${esc(v.notice_text)}</textarea></label>
+      <label class="f">Речник: имена, продукти, съкращения
+        <textarea name="glossary" rows="7" ${dis} placeholder="Пощенска банка&#10;ДСК: ди ес ке, DSK&#10;Мария Петрова">${esc((v.glossary || []).join("\n"))}</textarea>
+        <span class="muted small">По един на ред. След двоеточие: как разпознаването на реч го пише грешно (по желание). Речникът помага на разпознаването, поправя текста и минутите.</span></label>
       <label class="f">Лице на екрана в залата<select name="face_style" ${dis}>${[["pixel", "LED матрица"], ["capsule", "Капсули"], ["eve", "Овали"], ["dots", "Точки"], ["brows", "Вежди"], ["marker", "Флумастер"], ["phosphor", "CRT фосфор"], ["terminal", "Терминал"], ["orb", "Сфера (без лице)"]].map(([k, n]) => `<option value="${k}" ${v.face_style === k ? "selected" : ""}>${n}</option>`).join("")}</select></label>
       ${admin ? `<button class="primary">Запази</button>` : ""}
     </form>
@@ -617,6 +620,7 @@ async function pageSettings() {
       send_to: f.getAll("send_to"), fixed_recipients: (f.get("fixed_recipients") || "").split(/[,;\s]+/).filter(Boolean),
       auto_stop_silence_min: +f.get("auto_stop_silence_min"), max_meeting_hours: +f.get("max_meeting_hours"), notice_text: f.get("notice_text"),
       face_style: f.get("face_style"),
+      glossary: (f.get("glossary") || "").split(/\n/).map((x) => x.trim()).filter(Boolean),
     };
     await api("/api/settings", { method: "PATCH", body: { org_name: f.get("org_name"), settings } });
     toast("Запазено. Устройствата ще получат промените до 15 секунди.");

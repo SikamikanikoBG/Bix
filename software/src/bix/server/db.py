@@ -61,6 +61,8 @@ DEFAULT_ORG_SETTINGS: dict[str, Any] = {
     "notice_text": "Тази среща се записва. Bix е ИИ асистент, който прави транскрипция и минути.",
     # Лицето на екрана в залата: pixel | capsule | eve | dots | brows | marker | phosphor | terminal | orb
     "face_style": "pixel",
+    # Речник: имена, продукти, съкращения с правилния правопис; „Правилно: грешно1, грешно2“ на ред.
+    "glossary": [],
 }
 
 

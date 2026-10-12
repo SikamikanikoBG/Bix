@@ -119,7 +119,12 @@ class DiarizationCfg:
     provider: str = "sherpa"
     embedding_model: str = "nemo_en_titanet_small.onnx"
     threshold: float = 0.75
-    min_speaker_seconds: float = 6.0
+    # absolute minimum; the real floor is min_share of the meeting (longer meetings: more)
+    min_speaker_seconds: float = 3.0
+    # Clusters this similar are the same voice (far microphone, echo). Lower = fewer speakers.
+    merge_threshold: float = 0.75
+    # A "speaker" with less than this share of the meeting's speech is folded into the closest voice.
+    min_share: float = 0.025
     profile_match: float = 0.55
     num_threads: int = 4
 

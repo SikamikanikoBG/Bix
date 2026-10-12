@@ -884,6 +884,13 @@ def patch_settings(body: SettingsIn, request: Request, p: Principal = Depends(ad
                     raise HTTPException(400, f"„{k}“ не може да е отрицателно.")
                 if k == "max_meeting_hours" and not 1 <= v <= 12:
                     raise HTTPException(400, "Максималната продължителност е между 1 и 12 часа.")
+            elif k == "glossary":
+                from bix.server import glossary
+
+                try:
+                    v = glossary.clean(v if isinstance(v, (list, str)) else [])
+                except ValueError as e:
+                    raise HTTPException(400, str(e)) from None
             elif isinstance(default, list):
                 v = [str(x).strip() for x in (v if isinstance(v, list) else str(v).split(",")) if str(x).strip()]
             else:
@@ -895,7 +902,7 @@ def patch_settings(body: SettingsIn, request: Request, p: Principal = Depends(ad
             if k == "face_style" and v not in FACE_STYLES:
                 raise HTTPException(400, "Непознато лице.")
             if new.get(k, default) != v:
-                changes[k] = v
+                changes[k] = v if k != "glossary" else f"{len(v)} реда"
             new[k] = v
         org.settings = new
         audit(s, p.actor, "settings.update", org_id=p.org_id, ip=client_ip(request), changes=changes)
