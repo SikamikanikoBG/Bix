@@ -47,7 +47,11 @@ class FasterWhisperTranscriber:
         with _lock:
             if key not in _models:
                 log.info("loading faster-whisper %s on %s (%s)", *key)
-                _models[key] = WhisperModel(self.cfg.model, device=device, compute_type=compute, download_root=str(self.models_dir / "whisper"))
+                try:
+                    _models[key] = WhisperModel(self.cfg.model, device=device, compute_type=compute, download_root=str(self.models_dir / "whisper"))
+                except Exception as e:
+                    # Usually the first download from Hugging Face breaking off; the worker retries.
+                    raise SttError(f"Моделът {self.cfg.model} не се зареди (Няма връзка до Hugging Face?): {str(e)[:200]}") from e
             return _models[key]
 
     def check(self) -> str:

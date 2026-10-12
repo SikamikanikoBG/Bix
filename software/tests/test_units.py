@@ -117,3 +117,54 @@ def test_fix_caps_words_keeps_sentence_starts():
     ws = [Word(0, 1, "ДОБРЕ,"), Word(1, 2, "РЕШАВАМЕ"), Word(2, 3, "ТАКА."), Word(3, 4, "КАМПАНИЯТА"), Word(4, 5, "ТРЪГВА.")]
     got = [w.text for w in fix_caps_words("ДОБРЕ, РЕШАВАМЕ ТАКА. КАМПАНИЯТА ТРЪГВА.", ws)]
     assert got == ["Добре,", "решаваме", "така.", "Кампанията", "тръгва."]
+
+
+def test_whisper_http_sends_long_audio_in_pieces(monkeypatch):
+    """Regression: a 1h49m meeting in one request hit the proxy's 600 s limit (504)."""
+    import httpx
+
+    from bix.server.config import WhisperHttpCfg
+    from bix.server.stt.whisper_http import WhisperHttpTranscriber, _pieces
+
+    sr = 16000
+    audio = (0.3 * np.sin(np.arange(25 * 60 * sr) / 7)).astype(np.float32)
+    audio[int(477.0 * sr) : int(477.4 * sr)] = 0  # a pause near the first cut
+    pieces = _pieces(audio, 480)
+    assert len(pieces) == 4 and all(len(p) <= 480 * sr for _, p in pieces)
+    assert 477.0 <= pieces[1][0] <= 477.4
+    assert sum(len(p) for _, p in pieces) == len(audio)
+
+    calls = []
+
+    def post(url, **kw):
+        calls.append(kw)
+        seg = {"start": 1.0, "end": 2.0, "text": "Добро утро", "words": [{"start": 1.0, "end": 1.5, "word": "Добро"}]}
+        return httpx.Response(200, json={"segments": [seg]}, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(httpx, "post", post)
+    segs = WhisperHttpTranscriber(WhisperHttpCfg(url="http://x", chunk_s=480)).transcribe(audio, "bg")
+    assert len(calls) == 4
+    assert [round(s.start - o, 3) for s, (o, _) in zip(segs, pieces)] == [1.0] * 4
+    assert segs[1].words[0].start == segs[1].start
+
+
+def test_failed_model_download_is_retried(monkeypatch, tmp_path):
+    """Regression: a broken Hugging Face download failed the meeting with no retry."""
+    import sys
+    import types
+
+    from bix.server.config import FasterWhisperCfg
+    from bix.server.stt import faster_whisper_local
+    from bix.server.stt.base import SttError
+    from bix.server.worker import _transient
+
+    def broken(*a, **k):
+        raise RuntimeError("Task error: File reconstruction error: CAS Client Error")
+
+    monkeypatch.setitem(sys.modules, "faster_whisper", types.SimpleNamespace(WhisperModel=broken))
+    t = faster_whisper_local.FasterWhisperTranscriber(FasterWhisperCfg(model="tiny-test", device="cpu"), tmp_path)
+    try:
+        t.check()
+        raise AssertionError("expected SttError")
+    except SttError as e:
+        assert _transient(e)

@@ -93,6 +93,9 @@ class WhisperHttpCfg:
     url: str = ""
     timeout_s: int = 1800
     api_key: str = ""
+    # Дълъг запис се праща на парчета до толкова секунди: прокси пред сървъра
+    # (напр. nginx proxy_read_timeout 600 s) иначе спира 2-часова среща с 504.
+    chunk_s: int = 480
 
 
 @dataclass

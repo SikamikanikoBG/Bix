@@ -9,7 +9,7 @@ from __future__ import annotations
 import httpx
 import numpy as np
 
-from bix.common.audio import encode_flac
+from bix.common.audio import SR, encode_flac
 from bix.server.config import WhisperHttpCfg
 from bix.server.stt.base import Segment, SttError, Word, fix_caps, fix_caps_words
 
@@ -32,6 +32,18 @@ class WhisperHttpTranscriber:
         return self.cfg.url
 
     def transcribe(self, audio: np.ndarray, language: str, hints: list[str] | None = None) -> list[Segment]:
+        out = []
+        for offset, piece in _pieces(audio, self.cfg.chunk_s):
+            for seg in self._transcribe_one(piece, language, hints):
+                seg.start += offset
+                seg.end += offset
+                for w in seg.words:
+                    w.start += offset
+                    w.end += offset
+                out.append(seg)
+        return out
+
+    def _transcribe_one(self, audio: np.ndarray, language: str, hints: list[str] | None) -> list[Segment]:
         params = {"task": "transcribe", "language": language, "output": "json", "word_timestamps": "true", "vad_filter": "true", "encode": "true"}
         if hints:
             # Whisper's prompt biases spelling of names and terms.
@@ -57,6 +69,26 @@ class WhisperHttpTranscriber:
             words = fix_caps_words(s["text"], words)
             out.append(Segment(float(s["start"]), float(s["end"]), fix_caps(s["text"].strip()), confidence=_conf(s), words=words))
         return [s for s in out if s.text]
+
+
+def _pieces(audio: np.ndarray, chunk_s: int) -> list[tuple[float, np.ndarray]]:
+    """Long audio as pieces of at most chunk_s, each cut at the quietest moment of
+    its last 30 s so no word is torn in two. Returns (offset in seconds, piece)."""
+    size = int(chunk_s * SR)
+    if chunk_s <= 0 or len(audio) <= size:
+        return [(0.0, audio)]
+    frame = SR // 10
+    out, start = [], 0
+    while len(audio) - start > size:
+        lo = start + max(frame, size - 30 * SR)
+        window = audio[lo : start + size].astype(np.float32)
+        n = len(window) // frame
+        energy = np.sqrt(np.mean(window[: n * frame].reshape(n, frame) ** 2, axis=1))
+        cut = lo + int(np.argmin(energy)) * frame + frame // 2
+        out.append((start / SR, audio[start:cut]))
+        start = cut
+    out.append((start / SR, audio[start:]))
+    return out
 
 
 def _conf(s: dict) -> float | None:
