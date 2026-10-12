@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="bg">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bix · виртуално устройство</title>
+<style>
+  /* the device on a desk in the middle, its sensors on the right */
+  :root { --bg:#101317; --rail:#161a20; --line:#2a313b; --text:#e8ecf0; --muted:#8e98a4; --amber:#ffb340; --rec:#ff5150; --ok:#48c774; }
+  * { box-sizing:border-box; }
+  [hidden] { display:none !important; }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--text); font:15px/1.45 "Segoe UI",Roboto,system-ui,sans-serif; }
+  body { display:grid; grid-template-columns:minmax(0,1fr) 320px; }
+  #stage { position:relative; overflow:hidden; cursor:grab; touch-action:none;
+    background:radial-gradient(ellipse at 50% 30%, #2a3038 0%, #171b20 55%, #0f1215 100%); }
+  #stage.drag { cursor:grabbing; }
+  #css, #gl { position:absolute; inset:0; width:100%; height:100%; }
+  #css { pointer-events:none; }
+  #css iframe { pointer-events:auto; border:0; background:#0b0d10; }
+  #gl { pointer-events:none; z-index:2; }
+  #hint { position:absolute; left:16px; bottom:14px; z-index:3; color:var(--muted); font-size:13px; pointer-events:none; }
+  #msg { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:var(--muted); z-index:3; }
+  aside { background:var(--rail); border-left:1px solid var(--line); padding:18px; display:flex; flex-direction:column; gap:18px; overflow:auto; }
+  h1 { font-size:19px; margin:0; }
+  h2 { font-size:12px; letter-spacing:.09em; text-transform:uppercase; color:var(--muted); margin:0 0 8px; }
+  .lead { color:var(--muted); font-size:14px; margin:4px 0 0; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; }
+  button { font:inherit; font-size:14px; color:var(--text); background:#1e242c; border:1px solid var(--line); border-radius:10px; padding:9px 12px; cursor:pointer; }
+  button:hover { border-color:var(--amber); }
+  button.on { background:var(--amber); color:#1d1300; border-color:var(--amber); }
+  button:focus-visible { outline:2px solid var(--amber); outline-offset:2px; }
+  .state { font-size:14px; color:var(--muted); margin-top:6px; }
+  .state b { color:var(--text); }
+  input[type=range] { width:100%; accent-color:var(--amber); }
+  .scale { display:flex; justify-content:space-between; color:var(--muted); font-size:12px; }
+  a { color:var(--amber); }
+  @media (max-width: 860px) { body { grid-template-columns:1fr; grid-template-rows:62vh auto; } aside { border-left:0; border-top:1px solid var(--line); } }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="css"></div>
+  <canvas id="gl"></canvas>
+  <div id="msg">Зареждам модела…</div>
+  <div id="hint">Влачете, за да завъртите. Екранът е истинският софтуер: натискайте го.</div>
+</div>
+<aside>
+  <div>
+    <h1>Виртуален Bix</h1>
+    <p class="lead">Корпусът Bix CRT от репото, 7" екран, микрофонен масив XVF3800 с 12 светлини отгоре и радар LD2410C. Софтуерът е същият като на истинското устройство.</p>
+  </div>
+  <div>
+    <h2>Изглед</h2>
+    <div class="row"><button data-view="front">Отпред</button><button data-view="angle" class="on">Под ъгъл</button><button data-view="top">Отгоре</button></div>
+  </div>
+  <div>
+    <h2>Радар · присъствие</h2>
+    <div class="row"><button id="pIn">Някой влиза</button><button id="pOut">Залата е празна</button></div>
+    <div class="state" id="pState">Радар: <b>не е симулиран</b></div>
+  </div>
+  <div>
+    <h2>Микрофон XVF3800</h2>
+    <div class="row"><button id="mute">Бутон Mute</button></div>
+    <div class="state" id="mState"></div>
+    <div style="margin-top:12px">
+      <label for="doa" class="state">Къде седи този, който говори</label>
+      <input type="range" id="doa" min="-80" max="80" value="0">
+      <div class="scale"><span>вляво</span><span>срещу екрана</span><span>вдясно</span></div>
+    </div>
+    <p class="state">Звукът идва от микрофона на лаптопа (или от файла в device.toml). Говорете и гледайте светлините отгоре и лицето.</p>
+  </div>
+  <div>
+    <h2>Само екранът</h2>
+    <p class="state"><a href="/" target="_blank" rel="noopener">Отвори екрана на цял прозорец</a> (така ще изглежда на 7" дисплея).</p>
+  </div>
+</aside>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/renderers/CSS3DRenderer.js"></script>
+<script src="/sim/sim.js"></script>
+</body>
+</html>

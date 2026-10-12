@@ -1,0 +1,55 @@
+# Bix device (device.toml). Policy (language, live text, auto-stop, notice text)
+# comes from the server; this file only says how to reach it and the hardware.
+# Every key can also be set as BIX_DEVICE_<SECTION>_<KEY>.
+
+# Name shown in the portal before an admin renames it.
+name = "Bix"
+# Set by `bix device enroll`; kept here only for reference.
+server_url = ""
+# Private CA of the server (if not a public certificate) and the device's
+# client certificate for mTLS (the key can live in the ATECC608 via PKCS#11 later).
+ca_bundle = ""
+client_cert = ""
+client_key = ""
+heartbeat_s = 15.0
+
+[audio]
+# "" = system default microphone; part of a name ("XVF3800") or an index (bix device mics).
+# "file:/path/meeting.wav" = virtual microphone for demos and tests.
+input_device = ""
+energy_threshold_db = -48.0
+# Upload chunks are cut in pauses: target and maximum length in seconds.
+chunk_target_s = 20.0
+chunk_max_s = 45.0
+
+[spool]
+# Recording kept on the device while the network is down (blueprint: 2 hours).
+max_hours = 2.0
+
+[hardware]
+# auto | xvf3800 | none   (LED ring: direction of the speaker, red when paused)
+leds = "auto"
+led_brightness_pct = 25
+# voice direction (degrees, XVF3800) that points straight out of the screen: the face looks at whoever speaks.
+# Calibrate once: speak from in front of the screen and set this to the angle shown in the log/LEDs.
+doa_front_deg = 0
+# none | ld2410   (mmWave radar on UART: wakes the screen, ends empty meetings)
+presence = "none"
+presence_port = "/dev/ttyAMA0"
+presence_empty_minutes = 10
+
+[wake]
+# openWakeWord model trained on "Бикс" (not shipped yet).
+enabled = false
+model_path = ""
+threshold = 0.6
+
+[panel]
+# Local room panel in a browser (laptop / kiosk). Bound to localhost.
+enabled = true
+host = "127.0.0.1"
+port = 8711
+open_browser = false
+# Virtual device at http://127.0.0.1:8711/sim (3D model, simulated radar and mute button).
+# The installer turns it off on a real device.
+simulator = true

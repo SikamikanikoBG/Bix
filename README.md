@@ -10,6 +10,7 @@ Bix е офис устройство за заседателни зали. То 
 |---|---|
 | [`docs/index.html`](docs/index.html) | **Bix Studio**: 3D модел, симулация на среща и пълен blueprint (части с цени, 3D печат, свързване, сглобяване, софтуер, облак, регулации, план до старт) |
 | [`hardware/enclosure/`](hardware/enclosure/) | Корпус на CRT версията: 6 STL файла, ориентирани за печат, и параметричният генератор `bix_crt_parts.py` |
+| [`software/`](software/) | **Софтуерът**: агент на устройството (Windows, Ubuntu, Raspberry Pi) и сървър с портал (Docker, ЕС или частен облак). Пуска се на лаптоп с `bix dev`. Спецификация: [`software/SPEC.md`](software/SPEC.md) |
 
 Страницата се отваря директно в браузър или през GitHub Pages (Settings → Pages → branch `main`, папка `/docs`). 3D прегледът на частите зарежда `docs/stl/*.json`, затова при локално отваряне трябва уеб сървър: `python3 -m http.server -d docs`.
 

@@ -1,0 +1,51 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "bix"
+version = "0.1.0"
+description = "Bix: записва срещата, разпознава кой говори и праща минутите"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+dependencies = [
+  "numpy>=1.26",
+  "sounddevice>=0.5",
+  "soundfile>=0.12",
+  "sherpa-onnx>=1.12",
+  "httpx>=0.27",
+  "fastapi>=0.115",
+  "uvicorn>=0.30",
+  "python-multipart>=0.0.9",
+  "tomli-w>=1.0",
+  "anthropic>=1.0",
+  "sqlalchemy>=2.0",
+  "pyjwt[crypto]>=2.9",
+  "icalendar>=6",
+  "recurring-ical-events>=3",
+]
+
+[project.optional-dependencies]
+# Офлайн реч → текст на самата машина (CPU). Не е за Pi 5 с 2 GB.
+local-stt = ["faster-whisper>=1.1"]
+# Хардуер на устройството: радар по UART и XVF3800 по USB.
+device = ["pyserial>=3.5", "pyusb>=1.2"]
+# Лице на 7" дисплей без браузър (SDL2 / KMS).
+face = ["pygame-ce>=2.5"]
+# Дума за събуждане („Бикс“) с openWakeWord.
+wake = ["openwakeword>=0.6"]
+# Сървър в облака: PostgreSQL, S3 / Bedrock, OIDC.
+server = ["psycopg[binary]>=3.2", "boto3>=1.35", "pyjwt[crypto]>=2.9", "sqlalchemy>=2.0"]
+# Azure: Blob Storage за записите (Azure OpenAI, Speech и Graph не искат допълнителни пакети).
+azure = ["azure-storage-blob>=12.20"]
+dev = ["pytest>=8", "edge-tts>=6.1"]
+
+[project.scripts]
+bix = "bix.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/bix"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,2 @@
+# reSpeaker XVF3800 (Seeed): let the bix user send USB control requests (LED ring, DoA).
+SUBSYSTEM=="usb", ATTRS{idVendor}=="2886", ATTRS{idProduct}=="001a", MODE="0660", GROUP="bix"

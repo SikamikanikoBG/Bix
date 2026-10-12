@@ -1,0 +1,25 @@
+# Bix server without Docker (e.g. an Ubuntu VM in the EU or the customer's private cloud).
+# pip install "/opt/bix/src[server]" into /opt/bix/venv, then put secrets in /etc/bix/server.env
+[Unit]
+Description=Bix server (portal, device API, worker)
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+User=bix
+Group=bix
+Environment=BIX_DATA_DIR=/var/lib/bix/server
+Environment=BIX_SERVER_CONFIG=/var/lib/bix/server/server.toml
+Environment=BIX_LOG_JSON=1
+EnvironmentFile=-/etc/bix/server.env
+ExecStart=/opt/bix/venv/bin/bix server
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/bix
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

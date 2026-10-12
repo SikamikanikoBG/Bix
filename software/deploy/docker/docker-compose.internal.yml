@@ -1,0 +1,11 @@
+# Internal network (bank): the certificate comes from the bank's PKI, not from Let's Encrypt.
+#   docker compose -f docker-compose.yml -f docker-compose.internal.yml up -d --build
+services:
+  caddy:
+    command: caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
+    environment:
+      BIX_DOMAIN: ${BIX_DOMAIN}
+    volumes:
+      - ./Caddyfile.internal:/etc/caddy/Caddyfile:ro
+      - ./certs:/certs:ro
+      - caddy-data:/data

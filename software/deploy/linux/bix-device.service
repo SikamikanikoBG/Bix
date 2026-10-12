@@ -1,0 +1,31 @@
+[Unit]
+Description=Bix meeting device agent
+After=network-online.target sound.target
+Wants=network-online.target
+
+[Service]
+User=bix
+Group=bix
+Environment=BIX_DATA_DIR=/var/lib/bix/device
+Environment=BIX_DEVICE_CONFIG=/var/lib/bix/device/device.toml
+ExecStart=/opt/bix/venv/bin/bix device
+Restart=always
+RestartSec=3
+# A "restart" command from the portal exits the agent; systemd brings it back.
+
+# Hardening: the agent needs audio, USB (XVF3800), the serial radar and the network.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/bix
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=false
+SupplementaryGroups=audio dialout video render input
+
+[Install]
+WantedBy=multi-user.target

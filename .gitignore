@@ -2,3 +2,14 @@ __pycache__/
 *.pyc
 hardware/enclosure/stl/asm_*.stl
 .DS_Store
+.venv/
+*.egg-info/
+.pytest_cache/
+*.db
+software/test_meeting/
+software/alpha-test/harness/work/
+
+# internal TLS certificates and secrets of a Docker deployment
+software/deploy/docker/certs/*
+!software/deploy/docker/certs/README.md
+software/deploy/docker/.env

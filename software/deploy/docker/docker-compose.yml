@@ -1,0 +1,71 @@
+# Bix server for a single VM (EU region or the customer's private cloud).
+#   cp .env.example .env   # fill in secrets
+#   docker compose up -d
+#   docker compose exec bix bix server admin --email admin@firma.bg
+#
+# TLS: Caddy gets a certificate for BIX_DOMAIN automatically. Devices reach the
+# server only over 443 (blueprint: outbound 443 only).
+services:
+  bix:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      BIX_DATABASE_URL: postgresql+psycopg://bix:${POSTGRES_PASSWORD}@db/bix
+      BIX_HTTP_PUBLIC_URL: https://${BIX_DOMAIN}
+      BIX_HTTP_COOKIE_SECURE: "true"
+      BIX_HTTP_TRUSTED_PROXIES: 127.0.0.1,172.16.0.0/12
+    volumes:
+      - bix-data:/data
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # A second container that only processes meetings scales the heavy work
+  # separately from the web tier:  docker compose up -d --scale worker=2
+  worker:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      BIX_DATABASE_URL: postgresql+psycopg://bix:${POSTGRES_PASSWORD}@db/bix
+      BIX_HTTP_PUBLIC_URL: https://${BIX_DOMAIN}
+    command: ["bix", "server", "worker"]
+    volumes:
+      - bix-data:/data
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles: ["scale"]
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: bix
+      POSTGRES_DB: bix
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bix"]
+      interval: 5s
+      retries: 10
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports: ["443:443", "80:80"]
+    command: caddy reverse-proxy --from ${BIX_DOMAIN} --to bix:8710
+    volumes:
+      - caddy-data:/data
+    depends_on: [bix]
+
+volumes:
+  bix-data:
+  db-data:
+  caddy-data:

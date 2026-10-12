@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="bg">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bix · зала</title>
+<style>
+  /* The room screen: 7" touch display, 1280 x 720 landscape. Face on the left, what to do on the right. */
+  :root { --bg:#0b0d10; --panel:#14181e; --panel2:#1b2028; --line:#272e38; --text:#eef1f4; --muted:#8d96a2; --amber:#ffb340; --amber-ink:#1d1300;
+          --rec:#ff5150; --ok:#48c774; --warn:#e3a62f; --r:18px; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  [hidden] { display:none !important; }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--text); font:17px/1.4 "Segoe UI",Roboto,"DejaVu Sans",system-ui,sans-serif; overflow:hidden; user-select:none; }
+  body { display:flex; flex-direction:column; }
+  header { display:flex; align-items:center; gap:14px; padding:10px 22px; color:var(--muted); font-size:15px; }
+  header .room { color:var(--text); font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  header .clock { margin-left:auto; color:var(--text); font-size:22px; font-variant-numeric:tabular-nums; }
+  .chip { padding:3px 10px; border-radius:999px; border:1px solid var(--line); font-size:13px; white-space:nowrap; }
+  .chip.ok { color:var(--ok); border-color:#22472f; } .chip.bad { color:var(--rec); border-color:#5c2326; } .chip.warn { color:var(--warn); border-color:#5a4720; }
+  main { flex:1; display:grid; grid-template-columns: 46% 54%; min-height:0; }
+  .faceside { position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center; min-width:0; }
+  #faceCanvas { width:100%; height:74%; display:block; touch-action:manipulation; }
+  .say { position:absolute; left:6%; right:6%; bottom:6%; text-align:center; font-size:20px; font-weight:600; opacity:0; transform:translateY(6px); transition:opacity .25s, transform .25s; }
+  .say.on { opacity:1; transform:none; }
+  .recdot { position:absolute; top:8px; left:22px; display:flex; align-items:center; gap:8px; color:var(--rec); font-weight:700; letter-spacing:.06em; font-size:14px; }
+  .recdot::before { content:""; width:12px; height:12px; border-radius:50%; background:currentColor; animation:pulse 1.6s ease-in-out infinite; }
+  .recdot.paused { color:var(--muted); } .recdot.paused::before { animation:none; }
+  @keyframes pulse { 50% { opacity:.25; } }
+  .side { padding:6px 22px 18px 6px; display:flex; flex-direction:column; gap:14px; min-width:0; min-height:0; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:var(--r); padding:18px 20px; display:flex; flex-direction:column; gap:12px; min-width:0; }
+  .eyebrow { color:var(--muted); font-size:13px; letter-spacing:.08em; text-transform:uppercase; }
+  .title { font-size:26px; font-weight:700; line-height:1.2; overflow-wrap:anywhere; }
+  .sub { color:var(--muted); overflow-wrap:anywhere; }
+  .big-timer { font-size:44px; font-variant-numeric:tabular-nums; font-weight:300; letter-spacing:.5px; }
+  button { font:inherit; color:var(--text); background:var(--panel2); border:1px solid var(--line); border-radius:14px; padding:16px 18px; cursor:pointer; min-height:64px; touch-action:manipulation; }
+  button:active { transform:scale(.98); }
+  button:disabled { opacity:.45; }
+  button.primary { background:var(--amber); border-color:var(--amber); color:var(--amber-ink); font-weight:700; font-size:21px; min-height:84px; }
+  button.danger { background:var(--rec); border-color:var(--rec); color:#fff; font-weight:700; }
+  button.ghost { background:transparent; border-color:transparent; color:var(--muted); min-height:48px; padding:10px 12px; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .row > * { flex:1; }
+  .agenda { display:flex; flex-direction:column; gap:2px; }
+  .agenda div { display:flex; gap:12px; color:var(--muted); }
+  .agenda time { color:var(--text); font-variant-numeric:tabular-nums; min-width:52px; }
+  .status-line { font-size:15px; color:var(--muted); display:flex; gap:8px; align-items:baseline; }
+  .status-line b { color:var(--text); font-weight:600; }
+  .status-line .ok { color:var(--ok); } .status-line .warn { color:var(--warn); }
+  .banner { border-radius:var(--r); padding:16px 20px; display:flex; flex-direction:column; gap:12px; }
+  .banner.ending { background:#2b2412; border:1px solid #6b5420; }
+  .banner.suggest { background:#132231; border:1px solid #23506f; }
+  .banner .big { font-size:22px; font-weight:700; }
+  .live { flex:1; min-height:0; overflow:auto; color:var(--muted); font-size:15px; mask-image:linear-gradient(transparent, #000 30%); }
+  .live p { margin:0 0 6px; } .live time { font-variant-numeric:tabular-nums; margin-right:8px; opacity:.7; }
+  /* ask Bix */
+  .overlay { position:fixed; inset:0; background:rgba(5,7,10,.86); display:flex; align-items:center; justify-content:center; z-index:5; padding:20px; }
+  .sheet { width:min(1100px, 100%); max-height:100%; overflow:auto; background:var(--panel); border:1px solid var(--line); border-radius:22px; padding:22px; display:flex; flex-direction:column; gap:14px; }
+  .sheet .head { display:flex; align-items:center; gap:10px; }
+  .sheet .head .title { flex:1; }
+  .presets { display:grid; grid-template-columns:repeat(2, 1fr); gap:10px; }
+  .presets button { font-size:20px; text-align:left; min-height:76px; }
+  #holdAsk { background:#1d2a36; border-color:#2f4a60; font-size:20px; min-height:84px; }
+  #holdAsk.listening { background:var(--rec); border-color:var(--rec); color:#fff; }
+  .answer { font-size:24px; line-height:1.35; font-weight:600; }
+  .answer-q { color:var(--muted); font-size:15px; }
+  .points { margin:0; padding-left:1.1em; font-size:20px; display:flex; flex-direction:column; gap:6px; }
+  .noted { color:var(--ok); font-weight:700; }
+  .thinking { color:var(--muted); font-size:20px; }
+  .thinking::after { content:"…"; animation:dots 1.2s steps(4) infinite; display:inline-block; width:1.2em; overflow:hidden; vertical-align:bottom; }
+  @keyframes dots { 0% { width:0 } 100% { width:1.2em } }
+  .confirm .sheet { width:min(620px, 100%); }
+  /* on the room screen the face stays visible next to the answer: it thinks, then smiles */
+  @media (min-width: 821px) { #askSheet { justify-content:flex-end; background:linear-gradient(90deg, transparent 40%, rgba(5,7,10,.9) 40%); }
+    #askSheet .sheet { width:58%; } }
+  form.enroll { display:flex; flex-direction:column; gap:10px; }
+  input { font:inherit; padding:14px; border-radius:12px; border:1px solid var(--line); background:var(--panel2); color:var(--text); user-select:text; }
+  .error { color:var(--rec); font-size:15px; }
+  #identify { position:fixed; inset:0; z-index:9; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px;
+    background:#fff; color:#111; font-size:96px; font-weight:700; animation:blink .5s step-end infinite alternate; }
+  #identify small { font-size:28px; font-weight:400; }
+  @keyframes blink { 50% { background:var(--amber); } }
+  footer { padding:4px 22px 8px; color:#5d6672; font-size:12px; display:flex; gap:16px; flex-wrap:wrap; }
+  @media (max-width: 820px) {
+    html,body { overflow:auto; } body { min-height:100%; }
+    main { grid-template-columns:1fr; } .faceside { height:42vh; } .side { padding:0 14px 14px; }
+    .presets { grid-template-columns:1fr; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <span class="room" id="room">Bix</span><span id="org"></span>
+  <span class="chip" id="net">…</span><span class="chip warn" id="backlog" hidden></span>
+  <span class="clock" id="clock"></span>
+</header>
+<main>
+  <section class="faceside" id="face">
+    <div class="recdot" id="recdot" hidden>ЗАПИСВАМ</div>
+    <canvas id="faceCanvas" aria-hidden="true"></canvas>
+    <div class="say" id="say" aria-live="polite"></div>
+  </section>
+
+  <section class="side" id="side">
+    <!-- not enrolled -->
+    <div class="card" id="vEnroll" hidden>
+      <div class="eyebrow">Ново устройство</div>
+      <div class="title">Регистрирайте Bix</div>
+      <div class="sub">В портала: Устройства → Нов код. Въведете адреса на сървъра и кода.</div>
+      <form class="enroll" id="enroll">
+        <input id="enServer" placeholder="https://bix.company.eu" required autocomplete="off">
+        <input id="enCode" placeholder="XXXX-XXXX-XXXX" required autocomplete="off">
+        <button class="primary" type="submit">Регистрирай</button>
+      </form>
+    </div>
+
+    <!-- idle -->
+    <div id="vIdle" hidden style="display:flex;flex-direction:column;gap:14px;min-height:0">
+      <div class="banner suggest" id="suggest" hidden>
+        <div class="big" id="suggestText">Започва ли среща?</div>
+        <div class="sub">Чувам разговор, но не записвам. Bix записва само ако някой натисне.</div>
+        <div class="row"><button class="primary" id="btnSuggestYes">Записвай</button><button id="btnSuggestNo">Не, благодаря</button></div>
+      </div>
+      <div class="card" id="nowCard">
+        <div class="eyebrow" id="nowEyebrow">Сега в залата</div>
+        <div class="title" id="nowTitle"></div>
+        <div class="sub" id="nowSub"></div>
+        <button class="primary" id="btnStartEvent"></button>
+        <button id="btnStartAdhoc">Друга среща, без резервация</button>
+      </div>
+      <div class="card" id="freeCard">
+        <button class="primary" id="btnStart">Започни среща</button>
+        <div class="agenda" id="agenda"></div>
+      </div>
+      <div class="status-line" id="lastLine" hidden></div>
+    </div>
+
+    <!-- recording -->
+    <div id="vRec" hidden style="display:flex;flex-direction:column;gap:12px;min-height:0;flex:1">
+      <div class="banner ending" id="ending" hidden>
+        <div class="big" id="endingText"></div>
+        <div class="row"><button class="primary" id="btnKeep">Продължаваме</button><button id="btnEndNow">Край сега</button></div>
+      </div>
+      <div class="card" id="recCard">
+        <div class="row" style="align-items:flex-start">
+          <div style="flex:3;min-width:0"><div class="title" id="recTitle">Среща</div><div class="sub" id="recSub"></div></div>
+          <div class="big-timer" id="timer" style="flex:0 0 auto">00:00</div>
+        </div>
+        <div class="grid2">
+          <button class="primary" id="btnAsk">Попитай Bix</button>
+          <button id="btnStar">⭐ Важно</button>
+          <button id="btnMute">Пауза</button>
+          <button class="danger" id="btnStop">Край на срещата</button>
+        </div>
+        <button class="ghost" id="btnDiscard">Някой не е съгласен да се записва</button>
+      </div>
+      <div class="card" id="pausedCard" hidden>
+        <div class="title">Пауза. Нищо не се записва.</div>
+        <button class="primary" id="btnResume">Продължи записа</button>
+      </div>
+      <div class="live" id="live"></div>
+    </div>
+
+    <!-- just ended -->
+    <div class="card" id="vDone" hidden>
+      <div class="eyebrow">Готово</div>
+      <div class="title" id="doneTitle"></div>
+      <div class="sub" id="doneSub"></div>
+      <div id="doneTo" style="font-size:19px"></div>
+      <button class="primary" id="btnDone">Добре</button>
+    </div>
+    <div class="error" id="err" hidden></div>
+  </section>
+</main>
+
+<!-- Ask Bix -->
+<div class="overlay" id="askSheet" hidden>
+  <div class="sheet">
+    <div class="head"><div class="title">Попитай Bix</div><button class="ghost" id="btnAskClose">Затвори</button></div>
+    <div id="askChoose">
+      <div class="presets">
+        <button data-preset="decisions">Какво решихме досега?</button>
+        <button data-preset="tasks">Кой какво ще прави?</button>
+        <button data-preset="recap">Последните 10 минути</button>
+        <button data-preset="missed">Какво пропуснах?</button>
+      </div>
+      <div style="height:10px"></div>
+      <button id="holdAsk" style="width:100%">🎤 Задръжте и питайте на глас</button>
+      <div class="sub" style="margin-top:8px">Може и да кажете „Запиши задача: Иван праща офертата до петък“: Bix ще я запише в минутите.</div>
+    </div>
+    <div id="askBusy" class="thinking" hidden>Мисля</div>
+    <div id="askAnswer" hidden style="display:flex;flex-direction:column;gap:12px">
+      <div class="answer-q" id="ansQ"></div>
+      <div class="noted" id="ansNoted" hidden></div>
+      <div class="answer" id="ansText"></div>
+      <ul class="points" id="ansPoints"></ul>
+      <div class="row"><button id="btnAskAgain">Друг въпрос</button><button class="primary" id="btnAskOk">Благодаря</button></div>
+    </div>
+    <div class="error" id="askErr" hidden></div>
+  </div>
+</div>
+
+<!-- confirm (no browser dialogs on a kiosk) -->
+<div class="overlay confirm" id="confirm" hidden>
+  <div class="sheet">
+    <div class="title" id="confirmText"></div>
+    <div class="sub" id="confirmSub"></div>
+    <div class="row"><button id="confirmNo">Отказ</button><button class="danger" id="confirmYes">Да</button></div>
+  </div>
+</div>
+
+<div id="identify" hidden>Bix<small id="identifyRoom"></small></div>
+<footer><span id="mic"></span><span id="ver"></span></footer>
+<script src="/face.js"></script>
+<script src="/panel.js"></script>
+</body>
+</html>

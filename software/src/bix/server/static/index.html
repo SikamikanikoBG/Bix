@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="bg">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bix</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<div id="app">
+  <aside id="nav" hidden>
+    <div class="brand">Bix</div>
+    <div class="org" id="orgName"></div>
+    <a href="#/" data-route="home">Табло</a>
+    <a href="#/meetings" data-route="meetings">Срещи</a>
+    <a href="#/rooms" data-route="rooms">Зали</a>
+    <a href="#/devices" data-route="devices" data-role="admin auditor">Устройства</a>
+    <a href="#/people" data-route="people" data-role="admin member">Хора и гласове</a>
+    <a href="#/users" data-route="users" data-role="admin">Потребители</a>
+    <a href="#/settings" data-route="settings">Настройки</a>
+    <a href="#/audit" data-route="audit" data-role="admin auditor">Одит</a>
+    <div class="me"><span id="meName"></span><button class="link" id="logout">Изход</button></div>
+  </aside>
+  <main id="view"></main>
+</div>
+<div id="toast" hidden></div>
+<script src="/static/app.js"></script>
+</body>
+</html>

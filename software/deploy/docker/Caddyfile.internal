@@ -1,0 +1,8 @@
+# TLS with the bank's own certificate (no ACME / public DNS needed).
+{$BIX_DOMAIN} {
+	tls /certs/bix.crt /certs/bix.key
+	request_body {
+		max_size 200MB
+	}
+	reverse_proxy bix:8710
+}

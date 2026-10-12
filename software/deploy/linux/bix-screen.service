@@ -1,0 +1,26 @@
+[Unit]
+Description=Bix room screen (the panel in a kiosk browser on the 7" display)
+# cage is a minimal Wayland kiosk compositor: one full-screen app, touch input, no desktop.
+After=bix-device.service systemd-user-sessions.service
+Wants=bix-device.service
+Conflicts=getty@tty1.service
+
+[Service]
+User=bix
+PAMName=login
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+StandardInput=tty
+StandardOutput=journal
+UtmpIdentifier=tty1
+# wait for the agent's panel, then show it; the browser keeps no profile between starts
+ExecStartPre=/bin/sh -c 'for i in $(seq 60); do curl -sf -o /dev/null http://127.0.0.1:8711/ && exit 0; sleep 1; done; exit 1'
+ExecStart=/usr/bin/cage -s -- @CHROMIUM@ --kiosk --incognito --noerrdialogs --disable-infobars --no-first-run \
+  --disable-translate --disable-features=Translate --check-for-update-interval=31536000 --overscroll-history-navigation=0 \
+  --ozone-platform=wayland --touch-events=enabled --app=http://127.0.0.1:8711/
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=graphical.target

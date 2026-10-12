@@ -1,0 +1,134 @@
+# Bix server (server.toml). Every key can also be an environment variable:
+# BIX_<SECTION>_<KEY>, e.g. BIX_STT_PROVIDER=azure, BIX_LLM_VLLM_URL=...
+# Organisation policy (retention, language, live text, recipients) is set in the portal.
+
+[http]
+host = "127.0.0.1"
+port = 8710
+# Public address: links in e-mails and the SSO redirect.
+public_url = "https://bix.example.eu"
+# Behind a TLS proxy that verifies device client certificates (mTLS): the header
+# with the certificate's SHA-256 fingerprint. Devices are pinned to it on first use.
+mtls_fingerprint_header = ""
+trusted_proxies = ["127.0.0.1"]
+cookie_secure = true
+
+[database]
+# Empty = SQLite in the data directory. Production: PostgreSQL.
+url = ""   # postgresql+psycopg://bix:...@db/bix
+
+[storage]
+backend = "local"          # local | s3 | azure_blob
+s3_bucket = ""
+s3_prefix = "bix/"
+s3_region = "eu-central-1"
+s3_kms_key_id = ""         # customer-managed KMS key (SSE-KMS)
+azure_account_url = ""     # https://<account>.blob.core.windows.net  (login: [azure] / managed identity)
+azure_container = "bix"
+azure_prefix = "bix/"
+azure_connection_string_env = "BIX_AZURE_STORAGE_CONNECTION_STRING"   # or an account key in this variable
+
+[auth]
+secret_key = ""            # generated on first start
+session_hours = 12
+local_login = true
+oidc_enabled = false
+oidc_issuer = ""           # https://login.microsoftonline.com/<tenant>/v2.0
+oidc_client_id = ""
+oidc_client_secret_env = "BIX_OIDC_CLIENT_SECRET"
+oidc_default_role = "member"   # member | none (none = only pre-created users)
+oidc_allowed_domains = []
+
+# --- speech to text ---------------------------------------------------------
+[stt]
+# azure (EU region) | whisper_http (own GPU server) | faster_whisper (on this server)
+provider = "azure"
+# Used when the primary fails (e.g. own GPU server down).
+fallback_provider = ""
+
+[stt.azure]
+endpoint = ""              # https://<resource>.cognitiveservices.azure.com (needed for Entra ID and private endpoints)
+region = "westeurope"
+auth = "key"               # key | entra (the app or managed identity in [azure], role "Cognitive Services User")
+key_env = "AZURE_SPEECH_KEY"
+max_speakers = 10
+
+[stt.whisper_http]
+# whisper-asr-webservice API: https://github.com/ahmetoner/whisper-asr-webservice
+url = ""                   # http://gpu-server:9000
+timeout_s = 1800
+
+[stt.faster_whisper]
+model = "large-v3-turbo"
+device = "auto"            # auto | cpu | cuda
+compute_type = "int8"
+
+# --- who spoke ----------------------------------------------------------------
+[diarization]
+provider = "sherpa"        # sherpa (local) | provider (Azure's labels) | none
+embedding_model = "nemo_en_titanet_small.onnx"
+threshold = 0.75           # higher = fewer speakers
+min_speaker_seconds = 6.0
+profile_match = 0.55
+num_threads = 4
+
+# --- minutes --------------------------------------------------------------------
+[llm]
+# anthropic | bedrock (eu-central-1) | azure_openai | vllm (own GPU server) | claude_cli | none
+provider = "anthropic"
+fallback_provider = ""
+model = "claude-opus-5-5"
+effort = "medium"
+api_key_env = "ANTHROPIC_API_KEY"
+bedrock_region = "eu-central-1"
+# vLLM or any OpenAI-compatible server
+vllm_url = ""              # http://gpu-server:8000/v1
+vllm_model = ""            # empty = first model the server lists
+vllm_api_key_env = "BIX_VLLM_API_KEY"
+vllm_thinking = false
+# Azure OpenAI / Azure AI Foundry: a deployment in an EU region (or an EU Data Zone deployment)
+azure_endpoint = ""        # https://<resource>.openai.azure.com
+azure_deployment = ""      # the deployment name, e.g. gpt-4.1
+azure_api_version = "2024-10-21"   # or "v1"
+azure_auth = "key"         # key | entra (role "Cognitive Services OpenAI User")
+azure_api_key_env = "AZURE_OPENAI_API_KEY"
+
+# --- delivery -------------------------------------------------------------------
+[smtp]
+# The bank's internal relay: usually port 25, no login (allowed by the server's IP), STARTTLS if offered.
+host = ""
+port = 587
+starttls = true
+username = ""              # empty = relay without login
+password_env = "BIX_SMTP_PASSWORD"
+sender = ""                # bix@bank.bg
+sender_name = "Bix"
+reply_to = ""              # e.g. the IT service desk
+ca_file = ""               # PEM with the internal CA, if the relay's certificate is from the bank's PKI
+local_hostname = ""        # the name Bix gives in EHLO, if the relay checks it
+
+[graph]
+# Microsoft 365: room calendars (Calendars.Read) and sending (Mail.Send), app-only.
+# Empty tenant_id/client_id = the app from [azure]. Limit both permissions to the Bix mailbox and the
+# room mailboxes with an Exchange application access policy / RBAC for Applications.
+enabled = false
+tenant_id = ""
+client_id = ""
+client_secret_env = "BIX_GRAPH_CLIENT_SECRET"
+certificate_path = ""
+sender_mailbox = ""        # a shared mailbox, e.g. bix@bank.bg
+save_to_sent = true
+
+[azure]
+# One Microsoft Entra ID app (or the VM's managed identity) for Azure OpenAI, Speech, Blob and Graph.
+tenant_id = ""
+client_id = ""
+client_secret_env = "BIX_AZURE_CLIENT_SECRET"
+certificate_path = ""      # PEM with the private key + certificate (preferred over a secret)
+certificate_password_env = "BIX_AZURE_CERT_PASSWORD"
+managed_identity = false   # true on an Azure VM / Container Apps / AKS: no secrets at all
+managed_identity_client_id = ""
+
+[worker]
+threads = 1
+poll_s = 2.0

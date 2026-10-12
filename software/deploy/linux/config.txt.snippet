@@ -1,0 +1,14 @@
+# --- Bix CRT (Raspberry Pi 5) ---
+# UART0 on GPIO14/15 for the LD2410C radar (256000 baud); keep the console off it.
+enable_uart=1
+dtparam=uart0=on
+# ATECC608 on I2C (0x60).
+dtparam=i2c_arm=on
+# Touch Display 2 on DSI1, landscape (rotated 90°).
+dtoverlay=vc4-kms-dsi-ili9881-7inch,rotation=90
+# Verify the overlay name/rotation and the fan parameters on the first unit (not tested on hardware).
+# PoE+ HAT fan: start only above 70 °C so it stays out of the microphones (blueprint, section 03).
+dtparam=fan_temp0=70000
+dtparam=fan_temp0_hyst=5000
+dtparam=fan_temp0_speed=125
+# Also remove "console=serial0,115200" from /boot/firmware/cmdline.txt.
