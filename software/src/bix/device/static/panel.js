@@ -23,7 +23,8 @@ const face = new BixFace($("faceCanvas"), {
 
 // Where the screen gets its state from: the device agent on this machine (hardware, laptop
 // with `bix device`), or the agent running in this page (any laptop at https://<server>/room).
-const EVENTS = ["state", "level", "live", "uploaded", "marked", "presence", "identify", "meeting_ended", "answer"];
+const EVENTS = ["state", "level", "live", "uploaded", "marked", "presence", "radar", "sound", "identify", "meeting_ended", "answer"];
+window.bixFace = face; // the simulator's motion buttons talk to it
 const backend = window.BixBackend || {
   web: false,
   async post(path, body) {
@@ -304,7 +305,9 @@ const handlers = {
   live: (d) => { addLive(d); face.event("live"); },
   uploaded: () => face.event("uploaded"),
   marked: () => face.play([{ mood: "happy", ms: 900, sparkle: 6, say: "Отбелязах ⭐" }]),
-  presence: (d) => { if (st) { st.present = d.present; face.set(st); } },
+  presence: (d) => { if (st) { st.present = d.present; face.set(st); } face.presence(d.present); },
+  radar: (d) => { if (st) st.distance_cm = d.cm; face.setDistance(d.cm); },
+  sound: (d) => face.sound(d),
   identify: () => {
     const f = $("identify");
     f.hidden = false;
@@ -362,6 +365,36 @@ if (backend.web) {
   document.querySelector("#vEnroll .sub").textContent = "Администраторът дава код от портала: Устройства → Регистрирай устройство (с избрана зала). Кодът е еднократен.";
   document.querySelector("#vEnroll .title").textContent = "Свържете този лаптоп със залата";
 }
+
+// --- motion: a phone or tablet running the screen has a motion sensor (the Bix CRT has none) ---
+(function motionSensor() {
+  if (!("DeviceMotionEvent" in window)) return;
+  let g = null, peaks = [], lastBump = 0, asked = false;
+  const SHAKE = 12, BUMP = 18; // m/s² beyond gravity
+  // iOS asks for permission, and only from a tap
+  document.addEventListener("pointerdown", () => {
+    if (asked || typeof DeviceMotionEvent.requestPermission !== "function") return;
+    asked = true;
+    DeviceMotionEvent.requestPermission().catch(() => {});
+  });
+  window.addEventListener("devicemotion", (e) => {
+    const a = e.accelerationIncludingGravity;
+    if (!a || a.x == null) return;
+    const v = [a.x, a.y, a.z];
+    g = g ? g.map((x, i) => x + (v[i] - x) * .08) : v.slice(); // gravity: the slow part
+    const jolt = Math.hypot(v[0] - g[0], v[1] - g[1], v[2] - g[2]), t = performance.now() / 1000;
+    if (jolt > SHAKE) {
+      peaks = peaks.filter((p) => t - p < 1.2);
+      if (!peaks.length || t - peaks[peaks.length - 1] > .12) peaks.push(t);
+      if (peaks.length >= 4) { peaks = []; face.motion("shake"); }
+      else if (jolt > BUMP && t - lastBump > 1.5) { lastBump = t; face.motion("bump"); }
+    }
+    // tilt across the screen (in screen coordinates, whatever the rotation)
+    const ang = (((screen.orientation && screen.orientation.angle) || window.orientation || 0) * Math.PI) / 180;
+    const across = -(g[0] * Math.cos(ang) - g[1] * Math.sin(ang)) / 9.81;
+    face.motion("tilt", Math.abs(across) < .15 ? 0 : across);
+  });
+})();
 
 function clock() {
   const d = new Date();

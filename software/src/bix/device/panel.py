@@ -15,7 +15,9 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, StreamingResponse
-from pydantic import BaseModel
+from typing import Literal
+
+from pydantic import BaseModel, Field
 
 from bix.device.agent import Agent
 
@@ -43,6 +45,15 @@ class SimPresenceIn(BaseModel):
 
 class SimDoaIn(BaseModel):
     deg: int | None = None
+
+
+class SimDistanceIn(BaseModel):
+    cm: int | None = None
+
+
+class SimSoundIn(BaseModel):
+    kind: Literal["knock", "bang"]
+    count: int = Field(1, ge=1, le=9)
 
 
 def create_panel(agent: Agent) -> FastAPI:
@@ -111,6 +122,25 @@ def create_panel(agent: Agent) -> FastAPI:
         if not agent.cfg.panel.simulator:
             raise HTTPException(404)
         agent.sim_doa = body.deg
+        return {"ok": True}
+
+    @app.post("/api/sim/distance")
+    def sim_distance(body: SimDistanceIn) -> dict:
+        """The radar's distance to the nearest person (someone walks up to the screen)."""
+        if not agent.cfg.panel.simulator:
+            raise HTTPException(404)
+        if body.cm is not None and agent.present is not True:
+            agent._on_presence(True)
+            agent._publish_state()
+        agent._on_distance(body.cm)
+        return {"ok": True}
+
+    @app.post("/api/sim/sound")
+    def sim_sound(body: SimSoundIn) -> dict:
+        """A knock on the case or a bang in the room, from where the speaker slider points."""
+        if not agent.cfg.panel.simulator:
+            raise HTTPException(404)
+        agent.bus.publish("sound", kind=body.kind, count=body.count, db=-12.0 if body.kind == "bang" else -35.0, doa=agent.sim_doa)
         return {"ok": True}
 
     @app.post("/api/sim/mute")

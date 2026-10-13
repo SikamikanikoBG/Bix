@@ -3,6 +3,12 @@
    The engine turns the device state into a mood (asleep, listening, paused,
    uploading, done, offline, error) and keeps the character alive with small
    habits: blinks, glances, nods, a yawn when bored, a giggle when poked.
+   It feels the room: looks at whoever talks (mic array), startles at a bang,
+   answers a knock on the case, greets someone walking up and gets shy when
+   they come very close (radar), says goodbye when the room empties. And it
+   feels touch: a poked eye squints, a tickle under the eyes, a stroke purrs,
+   a swipe offends, a long press asks, a pinch squishes; on a phone or tablet
+   shaking makes it dizzy and tilting rolls its eyes downhill.
    While a meeting is recorded it stays calm and only pays attention.
    A style only draws: it gets the current expression and paints it. */
 (function () {
@@ -29,7 +35,16 @@
     sleepy: { lid: .55, smile: .1, lift: -.3, bright: .75, bob: .7 },
     asleep: { lid: 1, smile: .1, lift: -.4, bright: .55, bob: 1.4 },
     wink: { low: .4, smile: .7 },
+    ouch: { slant: .55, smile: -.35, open: .15, tilt: -5 },
+    purr: { low: 1, smile: .85, lift: .2, bob: .6 },
+    grumpy: { slant: -.55, lid: .3, smile: -.5, asym: .15 },
+    squished: { size: .86, low: .45, smile: -.1, open: .3 },
+    shy: { low: .55, smile: .55, lift: -.2, size: .9, tilt: -6 },
   };
+  // touch zones, in face units from the face centre (the eyes sit at about ±.2, -.05)
+  const EYE_X = .2, EYE_Y = -.05, EYE_R = .13;
+  // what a gesture is (face units, seconds)
+  const TAP_MOVE = .06, TAP_S = .35, HOLD_S = .65, SWIPE_SPEED = 2.2, PET_EVERY = .25;
   const NUM = Object.keys(BASE);
   const SLEEPY_AFTER = 10 * 60, ASLEEP_AFTER = 13 * 60;
   const pick = (a) => a[Math.floor(Math.random() * a.length)];
@@ -127,6 +142,7 @@
     listening: ["•", "_", "•"], paused: ["-", "_", "-"], thinking: ["•", "_", "•", "?"], worried: ["•", "︵", "•", ";"],
     confused: ["⊙", "_", "☉"], curious: ["•", "ᴗ", "•", "?"], surprised: ["⊙", "o", "⊙"], excited: ["^", "o", "^", "!"],
     dizzy: ["@", "_", "@"], yawn: ["-", "o", "-"], sleepy: ["ᵕ", "_", "ᵕ"], asleep: ["-", "_", "-", "zZ"], wink: ["^", "‿", "~"],
+    ouch: [">", "﹏", "•", "!"], purr: ["˘", "ω", "˘", "♡"], grumpy: ["¬", "_", "¬"], squished: [">", "o", "<"], shy: ["•", "ω", "•", "⁄⁄"],
   };
 
   const STYLES = {
@@ -304,7 +320,21 @@
       this.spinA = 0;
       this.t = now();
       this.reduced = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
-      canvas.addEventListener("pointerdown", (e) => { e.preventDefault(); this.poke(); });
+      this.fingers = new Map(); // pointers on the face: {x0, y0, x, y, t0, path, pets, held, moved}
+      this.finger = null; // where a single finger rests (face units): the eyes follow it
+      this.pinch = null;
+      this.squish = 0; // springs to the pinch
+      this.squint = { side: 0, until: 0 }; // one eye shut after it was poked
+      this.near = 0; // somebody close to the screen (radar), 0..1
+      this.dist = null;
+      this.tiltIn = 0; // the device itself is tilted (motion sensor), -1..1
+      this.lastPresent = null;
+      this.said = {}; // when a reaction last spoke: they don't repeat every time
+      this.pets = [];
+      this.voice = { side: 0, since: 0 };
+      canvas.addEventListener("pointerdown", (e) => this._down(e));
+      canvas.addEventListener("pointermove", (e) => this._move(e));
+      for (const t of ["pointerup", "pointercancel", "pointerleave"]) canvas.addEventListener(t, (e) => this._up(e, t === "pointerup"));
       const fit = () => this._fit();
       window.addEventListener("resize", fit);
       fit();
@@ -321,6 +351,8 @@
       const prev = this.st;
       this.st = st;
       if (!prev) {
+        this.lastPresent = st.present;
+        this.dist = st.distance_cm == null ? null : st.distance_cm;
         if (!st.enrolled) this._say("Здравейте! Аз съм Bix. Регистрирайте ме с код от портала.", 7000);
         return;
       }
@@ -334,8 +366,77 @@
       if (!prev.online && st.online && prev.enrolled) this.play([{ mood: "happy", ms: 1200, bounce: -.5 }]);
       if (!prev.enrolled && st.enrolled) this.play([{ mood: "excited", ms: 1800, bounce: -1.4, sparkle: 10, say: "Регистриран съм! Готов за срещи." }]);
       if (st.error && st.error !== prev.error) this.play([{ mood: "confused", ms: 1500 }]);
-      if (prev.present !== st.present && st.present) this._wake(true);
+      this.presence(st.present);
+      if (st.distance_cm !== undefined && st.distance_cm !== this.dist) this.setDistance(st.distance_cm);
       if (st.state !== prev.state || st.muted !== prev.muted) { this.lastActivity = now(); this.tilt.target = 0; }
+    }
+
+    // the radar: people came in, or the last one left (the panel may hand over the same object, so remember it here)
+    presence(present) {
+      const was = this.lastPresent;
+      this.lastPresent = present;
+      if (was === present || was === null || !this.st) return;
+      if (present) this._wake(true);
+      else if (this.st.state !== "recording" && !this.asleep) {
+        this.play([{ mood: "happy", ms: 1500, wink: true, tilt: 6, say: pick(["Довиждане!", "Чао, до скоро!", "Хубав ден!"]) }, { mood: "sleepy", ms: 1500 }]);
+      }
+    }
+
+    // the radar's distance to the nearest person: someone walks up, or comes very close
+    setDistance(cm) {
+      const prev = this.dist;
+      this.dist = cm;
+      if (cm == null || !this.st || this.st.state === "recording") return;
+      if (this.asleep) { this._wake(true); return; }
+      if (cm < 45 && (prev == null || prev >= 45) && this._once("shy", 30)) {
+        this.play([{ mood: "shy", ms: 1800, bounce: .6, say: pick(["Ой, много сме близо…", "Хи, виждам ви отблизо!"]) }]);
+      } else if (cm < 130 && (prev == null || prev >= 160) && this._once("hello", 90)) {
+        this.play([{ mood: "happy", ms: 1400, bounce: -.6, say: pick(["Здрасти!", "О, здравейте!", greeting()]) }]);
+      }
+      this.lastActivity = now();
+    }
+
+    // a knock on the case or a bang in the room (only how loud and from where, never what)
+    sound({ kind, count = 1, doa = null }) {
+      if (!this.st) return;
+      const dir = doa == null ? pick([-.7, .7]) : Math.sin(doa * Math.PI / 180) * .85;
+      if (this.st.state === "recording") { this._look(dir, 0, .9); return; } // a glance, the meeting goes on
+      this.lastActivity = now();
+      if (this.asleep) {
+        this.asleep = false;
+        this._look(dir, 0, 2);
+        this.play(kind === "bang"
+          ? [{ mood: "surprised", ms: 700, bounce: -1.6, say: "Какво беше това?!" }, { mood: "worried", ms: 900 }]
+          : [{ mood: "surprised", ms: 500, bounce: -1 }, { mood: "curious", ms: 1500, tilt: 9, say: "Кой е?" }]);
+        return;
+      }
+      this._look(dir, -.05, 2.2);
+      if (kind === "bang") this.play([{ mood: "surprised", ms: 650, bounce: -1.8, say: this._once("bang", 20) ? pick(["Ох, стреснах се!", "Уф!", "Леле!"]) : "" }, { mood: "worried", ms: 900 }]);
+      else if (count >= 4) this.play([{ mood: "grumpy", ms: 1600, say: pick(["Стига, буден съм!", "Чух, чух!"]) }]);
+      else if (count >= 2) this.play([{ mood: "excited", ms: 600, bounce: -1.2 }, { mood: "curious", ms: 1500, tilt: 10, say: pick(["Кой е там?", "Влез!", "Тук съм!"]) }]);
+      else this.play([{ mood: "curious", ms: 1300, tilt: pick([-8, 8]), say: this._once("knock", 15) ? "Ехо?" : "" }]);
+    }
+
+    // the device moved (motion sensor of a phone/tablet; buttons in the simulator)
+    motion(kind, arg = 0) {
+      if (kind === "tilt") { this.tiltIn = Math.max(-1, Math.min(1, arg)); return; }
+      if (!this.st) return;
+      this.lastActivity = now();
+      if (this.st.state === "recording") {
+        if (kind === "shake") this.play([{ mood: "worried", ms: 1200, say: this._once("shakeRec", 30) ? "Внимателно, записвам!" : "" }]);
+        return;
+      }
+      this.asleep = false;
+      if (kind === "shake") this.play([{ mood: "dizzy", ms: 2000, wobble: true, say: pick(["Ууу, спри, ще ми прилошее!", "Земетресение!", "Ааа, върти се!"]) }, { mood: "confused", ms: 900 }]);
+      else if (kind === "bump") this.play([{ mood: "surprised", ms: 700, bounce: -1.6, say: this._once("bump", 10) ? "Опа!" : "" }]);
+    }
+
+    // true at most once per `secs` for this reaction: lines that would get annoying
+    _once(key, secs) {
+      const t = now();
+      if (t - (this.said[key] || -1e9) < secs) return false;
+      this.said[key] = t;
+      return true;
     }
 
     setLevel({ db, speaking, doa }) {
@@ -363,6 +464,117 @@
         if (data.reason === "discarded") this.play([{ mood: "neutral", ms: 1500, say: why }]);
         else this.play([{ mood: "proud", ms: 4000, sparkle: 14, bounce: -.8, say: (why ? why + " " : "Готово! ") + "Минутите ще дойдат по имейл." }]);
       }
+    }
+
+    // ---- touch: where and how the face is touched ------------------------------------
+    _at(e) { // pointer → face units from the face centre
+      const r = this.c.getBoundingClientRect();
+      const U = Math.min(r.width / 1.5, r.height) || 1;
+      return { x: (e.clientX - r.left - r.width / 2) / U, y: (e.clientY - r.top - r.height * .47) / U };
+    }
+
+    _calm() { return this.st && this.st.state === "recording"; } // a meeting: no games, a wink at most
+
+    _down(e) {
+      e.preventDefault();
+      try { this.c.setPointerCapture(e.pointerId); } catch (_) { /* synthetic events */ }
+      const p = this._at(e), t = now();
+      this.fingers.set(e.pointerId, { x0: p.x, y0: p.y, x: p.x, y: p.y, t0: t, path: 0, petPath: 0, pets: 0, held: false, moved: false });
+      this.lastActivity = t;
+      if (this.asleep) { this._wake(true); this.fingers.get(e.pointerId).held = true; return; }
+      if (this.fingers.size === 2) {
+        const [a, b] = [...this.fingers.values()];
+        this.pinch = { d0: Math.hypot(a.x - b.x, a.y - b.y) || .01, done: false };
+      }
+      if (this.fingers.size === 1 && !this._calm()) {
+        this.finger = p;
+        const id = e.pointerId;
+        setTimeout(() => { // held still: "what is it?"
+          const f = this.fingers.get(id);
+          if (f && !f.moved && !f.held && this.fingers.size === 1 && !this._calm()) {
+            f.held = true;
+            this.play([{ mood: "curious", ms: 1800, tilt: 10, say: pick(["Да? Какво има?", "Слушам ви.", "Хм?"]) }]);
+          }
+        }, HOLD_S * 1000);
+      }
+    }
+
+    _move(e) {
+      const f = this.fingers.get(e.pointerId);
+      if (!f) return;
+      const p = this._at(e), step = Math.hypot(p.x - f.x, p.y - f.y);
+      f.path += step; f.petPath += step; f.x = p.x; f.y = p.y;
+      if (Math.hypot(p.x - f.x0, p.y - f.y0) > TAP_MOVE) f.moved = true;
+      if (this._calm()) return;
+      if (this.fingers.size === 2 && this.pinch) {
+        const [a, b] = [...this.fingers.values()];
+        const k = Math.hypot(a.x - b.x, a.y - b.y) / this.pinch.d0;
+        this.squish = Math.max(0, Math.min(1, (1 - k) * 1.6));
+        if (k < .7 && !this.pinch.done) { this.pinch.done = true; this.play([{ mood: "squished", ms: 60000, say: pick(["Мачкаш ме!", "Ой, тясно ми е!"]) }]); }
+        return;
+      }
+      this.finger = p;
+      // a slow stroke is petting: it purrs while the hand moves
+      const speed = f.path / Math.max(.05, now() - f.t0);
+      if (f.petPath > PET_EVERY && speed < SWIPE_SPEED) {
+        f.petPath = 0; f.pets++;
+        this._pet(Math.sign(p.x - f.x0) || 1);
+      }
+    }
+
+    _up(e, released) {
+      const f = this.fingers.get(e.pointerId);
+      if (!f) return;
+      this.fingers.delete(e.pointerId);
+      if (this.fingers.size < 2 && this.pinch) {
+        const done = this.pinch.done;
+        this.pinch = null; this.squish = 0;
+        if (done) this.play([{ mood: "surprised", ms: 300, bounce: -1.2 }, { mood: "happy", ms: 900, say: "Уф, пак съм си аз." }]);
+        return;
+      }
+      if (!this.fingers.size) this.finger = null;
+      if (!released || f.held) return;
+      const dur = now() - f.t0, dx = f.x - f.x0, dy = f.y - f.y0, dist = Math.hypot(dx, dy);
+      if (dist < TAP_MOVE && dur < TAP_S) return this._tap(f.x0, f.y0);
+      if (f.pets) return; // it was petting: already answered while the hand moved
+      if (dist / dur >= SWIPE_SPEED) return this._swipe(Math.sign(dx) || 1);
+    }
+
+    _tap(x, y) {
+      if (this.asleep) return this._wake(true);
+      if (this._calm()) return this.play([{ mood: "wink", ms: 600, wink: true }]); // don't disturb the meeting
+      for (const side of [-1, 1]) {
+        if (Math.hypot(x - side * EYE_X, y - EYE_Y) < EYE_R) { // poked in the eye
+          this.squint = { side, until: now() + 1.1 };
+          this.lastActivity = now();
+          return this.play([{ mood: "ouch", ms: 1100, bounce: .5, tilt: side * -6, say: pick(["Ау, окото ми!", "Ой!", "Внимавай!"]) }]);
+        }
+      }
+      if (y > .1 && Math.abs(x) < .3) { // under the eyes: a tickle
+        this.lastActivity = now();
+        return this.play([{ mood: "giggle", ms: 1100, wobble: true, bounce: -.6, say: pick(["Хи-хи, гъделичка!", "Ихи-хи!", "Не там, гъдел ме е!"]) }]);
+      }
+      this.poke();
+    }
+
+    _pet(dir) {
+      const t = now();
+      this.lastActivity = t;
+      this.pets = this.pets.filter((x) => t - x < 6).concat(t);
+      if (this.pets.length >= 4) this._hearts(1);
+      // leans into the hand; keeps purring while stroked
+      this.acts = [];
+      this.act = { mood: "purr", tilt: dir * 7, until: t + 1.2 };
+      if (this._once("purr", 12)) this._say(pick(["Мрр…", "Ммм, приятно.", "Още!"]));
+    }
+
+    _swipe(dir) {
+      if (this.asleep) return this._wake(true);
+      if (this._calm()) return;
+      this.lastActivity = now();
+      this.tilt.v += dir * 160; // knocked aside
+      this._look(-dir * .9, .1, 2.2); // and looks away from the hand
+      this.play([{ mood: "surprised", ms: 250 }, { mood: "grumpy", ms: 2000, say: pick(["Ей! Защо така?", "Хм!", "Това не беше мило."]) }, { mood: "neutral", ms: 400 }]);
     }
 
     poke() {
@@ -397,6 +609,10 @@
     }
 
     _nod(k) { this.bounce.v += 1.6 * k; }
+
+    _hearts(n) {
+      for (let i = 0; i < n; i++) this.parts.push({ k: "heart", x: rnd(-.25, .25), y: -.2, vx: rnd(-.08, .08), vy: rnd(-.25, -.15), life: 0, max: rnd(1.2, 1.8), r: rnd(.035, .05) });
+    }
 
     _sparkle(n) {
       for (let i = 0; i < n; i++) {
@@ -448,7 +664,9 @@
       this.t = t;
       const s = this.st;
       const idle = !s || s.state !== "recording";
-      if (idle && !this.asleep && s && (s.present === false || t - this.lastActivity > ASLEEP_AFTER)) this.asleep = true;
+      // falls asleep when the room empties (after saying goodbye) or nothing happened for long
+      if (idle && !this.asleep && s && !this.act && !this.acts.length && !this.fingers.size
+          && (this.lastPresent === false || t - this.lastActivity > ASLEEP_AFTER)) this.asleep = true;
 
       // current short expression
       if (!this.act || t > this.act.until) {
@@ -470,11 +688,22 @@
       const k = 1 - Math.exp(-dt * 9);
       for (const n of NUM) this.p[n] += (m[n] - this.p[n]) * k;
 
-      // gaze: voice direction while recording, else habits; quick saccades
+      // somebody close (radar): a little bigger, looking up at them
+      const nearT = this.dist == null || this.asleep ? 0 : Math.max(0, Math.min(1, (180 - this.dist) / 130));
+      this.near += (nearT - this.near) * (1 - Math.exp(-dt * 3));
+
+      // gaze: a finger on the face, else the voice (mic array), else habits; quick saccades
+      const voice = this.level.doa != null && this.level.speaking && t - this.level.at < .6 && !this.asleep;
+      const vside = voice ? Math.sign(this.level.doa) : 0;
+      if (vside !== this.voice.side) this.voice = { side: vside, since: t };
       let gx = 0, gy = 0;
       if (mood === "thinking" && !this.act) { gx = .55; gy = -.7; }
-      else if (s && s.state === "recording" && this.level.doa != null && this.level.speaking) { gx = Math.sin(this.level.doa * Math.PI / 180) * .85; gy = .05; }
+      else if (this.finger) { gx = Math.max(-1, Math.min(1, this.finger.x * 2.2)); gy = Math.max(-1, Math.min(1, (this.finger.y - EYE_Y) * 2.2)); }
+      else if (voice && !(this.act && t < this.gaze.until)) { gx = Math.sin(this.level.doa * Math.PI / 180) * .85; gy = .05; }
       else if (t < this.gaze.until) { gx = this.gaze.tx; gy = this.gaze.ty; }
+      else if (this.near > .2) gy = -.35 * this.near;
+      gx += this.tiltIn * .8; // tilted device: the eyes slide downhill
+      gx = Math.max(-1.2, Math.min(1.2, gx));
       if (this.asleep || (this.act && this.act.mood === "giggle")) { gx = 0; gy = .1; }
       if (this.act && this.act.mood === "dizzy") { gx = Math.sin(t * 5) * .5; gy = Math.cos(t * 5) * .4; }
       const kg = 1 - Math.exp(-dt * 16);
@@ -483,6 +712,8 @@
 
       // tilt and bounce: damped springs, so nods and hops overshoot a little
       let tiltT = (this.act && this.act.tilt != null) ? this.act.tilt : (m.tilt || this.tilt.target || 0);
+      if (!tiltT && this.voice.side && t - this.voice.since > 2.5) tiltT = this.voice.side * 4; // one side talks a while: turns to them
+      tiltT += this.tiltIn * 12;
       if (this.act && this.act.wobble) tiltT = Math.sin(t * 9) * 12;
       this.tilt.v += ((tiltT - this.tilt.a) * 60 - this.tilt.v * 9) * dt;
       this.tilt.a += this.tilt.v * dt;
@@ -523,6 +754,12 @@
       return 1 - Math.sin(Math.PI * ph) * .94;
     }
 
+    _squintF(t, side) { // the poked eye stays shut a moment, then opens slowly
+      if (side !== this.squint.side || t > this.squint.until) return 1;
+      const left = this.squint.until - t;
+      return left > .35 ? .08 : .08 + (1 - left / .35) * .92;
+    }
+
     _fit() {
       const r = this.c.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
       this.c.width = Math.max(1, Math.round(r.width * dpr));
@@ -539,13 +776,14 @@
       ctx.clearRect(0, 0, W, H);
       ctx.translate(W / 2, H * .47 + (this.bounce.y * .1 + breathe) * U);
       ctx.rotate(this.tilt.a * Math.PI / 180);
-      ctx.scale(1 - squash * .6, 1 + squash);
+      this.sq = (this.sq || 0) + (this.squish - (this.sq || 0)) * .25;
+      ctx.scale((1 - squash * .6) * (1 + this.sq * .22), (1 + squash) * (1 - this.sq * .3));
       const lvl = this.st && this.st.state === "recording" && this.level.speaking && !this.st.muted
         ? Math.max(0, Math.min(1, (this.level.db + 60) / 40)) : 0;
       const f = Object.assign({}, p, {
-        U, W, H, t, bg: this.bg, mood: this.mood, gx: this.gaze.x, gy: this.gaze.y, lvl, spinA: this.spinA,
+        U, W, H, t, bg: this.bg, mood: this.mood, size: p.size * (1 + this.near * .1), gx: this.gaze.x, gy: this.gaze.y, lvl, spinA: this.spinA,
         tiltA: this.tilt.a, bounceY: this.bounce.y,
-        op: { "-1": (1 - p.lid) * this._blinkF(t, -1), "1": (1 - p.lid) * this._blinkF(t, 1) },
+        op: { "-1": (1 - p.lid) * this._blinkF(t, -1) * this._squintF(t, -1), "1": (1 - p.lid) * this._blinkF(t, 1) * this._squintF(t, 1) },
       });
       if (this.style.glow) {
         // glowing looks: draw once to a layer, then a blurred copy under a sharp one
@@ -590,6 +828,12 @@
           if (this.styleName === "terminal") continue;
           ctx.globalAlpha = a * .8; ctx.fillStyle = col; ctx.font = `700 ${q.r * U * (1 + q.life * .3)}px system-ui, sans-serif`; ctx.textAlign = "center";
           ctx.fillText("z", q.x * U, q.y * U);
+        } else if (q.k === "heart") {
+          ctx.globalAlpha = a; ctx.fillStyle = "rgb(255,120,150)";
+          const r = q.r * U, x = q.x * U, y = q.y * U;
+          ctx.beginPath(); ctx.moveTo(x, y + r * .9);
+          ctx.bezierCurveTo(x - r * 1.6, y - r * .2, x - r * .6, y - r * 1.3, x, y - r * .4);
+          ctx.bezierCurveTo(x + r * .6, y - r * 1.3, x + r * 1.6, y - r * .2, x, y + r * .9); ctx.fill();
         } else {
           ctx.globalAlpha = a; ctx.fillStyle = "rgb(255,200,96)";
           const r = q.r * U, x = q.x * U, y = q.y * U;

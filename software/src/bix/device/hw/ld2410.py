@@ -56,13 +56,33 @@ def parse(buf: bytearray) -> list[dict]:
             )
 
 
-class Presence:
-    """Calls on_change(True/False). 'Absent' only after no target for hold_s."""
+def nearest_cm(r: dict) -> int | None:
+    """The closer of the moving and the still target; None when nobody is there."""
+    found = []
+    if r["state"] & 1:
+        found.append(r["moving_cm"])
+    if r["state"] & 2:
+        found.append(r["static_cm"])
+    return min(found) if found else None
 
-    def __init__(self, port: str, on_change: Callable[[bool], None], hold_s: float = 30.0) -> None:
+
+class Presence:
+    """Calls on_change(True/False). 'Absent' only after no target for hold_s.
+    on_distance(cm or None) gets how far the nearest person is, when it changes
+    by DISTANCE_STEP_CM or more (at most a few times a second): the face reacts
+    to someone walking up to it."""
+
+    DISTANCE_STEP_CM = 15
+    DISTANCE_EVERY_S = 0.25
+
+    def __init__(self, port: str, on_change: Callable[[bool], None], hold_s: float = 30.0,
+                 on_distance: Callable[[int | None], None] | None = None) -> None:
         self.port = port
         self.on_change = on_change
+        self.on_distance = on_distance
         self.hold_s = hold_s
+        self.distance: int | None = None
+        self._distance_at = 0.0
         self.present: bool | None = None
         self.last_seen = 0.0
         self._stop = threading.Event()
@@ -85,10 +105,22 @@ class Presence:
                         for r in parse(buf):
                             if r["state"]:
                                 self.last_seen = time.time()
+                            self._distance(r)
                         self._update()
             except Exception as e:
                 log.warning("radar on %s: %s", self.port, e)
                 self._stop.wait(10)
+
+    def _distance(self, r: dict) -> None:
+        if not self.on_distance:
+            return
+        cm = nearest_cm(r)
+        now = time.time()
+        if now - self._distance_at < self.DISTANCE_EVERY_S:
+            return
+        if (cm is None) != (self.distance is None) or (cm is not None and abs(cm - self.distance) >= self.DISTANCE_STEP_CM):
+            self.distance, self._distance_at = cm, now
+            self.on_distance(cm)
 
     def _update(self) -> None:
         now = time.time()

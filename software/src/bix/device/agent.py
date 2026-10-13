@@ -29,6 +29,7 @@ from bix.device.capture import FRAME, Capture
 from bix.device.client import NotEnrolled, ServerClient, platform_string
 from bix.device.config import DeviceConfig
 from bix.device.hw import make_leds
+from bix.device.sounds import SoundEvents
 from bix.device.spool import Spool, recover_open
 
 log = logging.getLogger(__name__)
@@ -73,6 +74,8 @@ class Agent:
         self.level = -90.0
         self.speaking = False
         self.present: bool | None = None
+        self.distance_cm: int | None = None  # radar: how far the nearest person is
+        self._sounds = SoundEvents()
         self._doa: int | None = None
         self.sim_doa: int | None = None
         self._doa_at = 0.0
@@ -121,7 +124,7 @@ class Agent:
             try:
                 from bix.device.hw.ld2410 import Presence
 
-                Presence(self.cfg.hardware.presence_port, self._on_presence).start()
+                Presence(self.cfg.hardware.presence_port, self._on_presence, on_distance=self._on_distance).start()
             except Exception as e:
                 log.warning("presence radar: %s", e)
         self.leds.show("idle")
@@ -326,6 +329,7 @@ class Agent:
             "level_db": round(self.level, 1),
             "speaking": self.speaking,
             "present": self.present,
+            "distance_cm": self.distance_cm,
             "backlog_s": round(self.spool.backlog_seconds()),
             "mic": self.capture.device_name,
             "vad": self._vad.kind if self._vad else "",
@@ -393,6 +397,8 @@ class Agent:
                     chunk_s = len(self._chunk) * FRAME / SR
                     if (chunk_s >= self.cfg.audio.chunk_target_s and not speech) or chunk_s >= self.cfg.audio.chunk_max_s:
                         self._flush_chunk()
+            for snd in self._sounds.feed(frame, self.level, speech):
+                self.bus.publish("sound", kind=snd.kind, count=snd.count, db=snd.db, doa=self._sound_angle())
             if now - last_level > 0.1:
                 last_level = now
                 self.bus.publish("level", db=round(self.level, 1), speaking=speech, doa=self._doa_angle(now))
@@ -409,6 +415,13 @@ class Agent:
             d = self.leds.doa()
             self._doa = (d[0] - self.cfg.hardware.doa_front_deg + 180) % 360 - 180 if d else None
         return self._doa
+
+    def _sound_angle(self) -> int | None:
+        """Where a knock or a bang came from (the mic array tracks any sound, not only voices)."""
+        if self.leds.kind == "none":
+            return self.sim_doa
+        d = self.leds.doa()
+        return (d[0] - self.cfg.hardware.doa_front_deg + 180) % 360 - 180 if d else None
 
     def _flush_chunk(self) -> None:
         if not self._chunk or not self.meeting_id:
@@ -484,6 +497,10 @@ class Agent:
         self.present = present
         self.absent_since = None if present else time.time()
         self.bus.publish("presence", present=present)
+
+    def _on_distance(self, cm: int | None) -> None:
+        self.distance_cm = cm
+        self.bus.publish("radar", cm=cm)
 
     # --- wake word (optional) ---------------------------------------------
     def _setup_wake(self) -> None:

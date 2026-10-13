@@ -94,7 +94,7 @@ def create_app(srv: Server, run_worker: bool = True) -> FastAPI:
     # --- Bix in the browser: any laptop in a room is a device at /room (no install) ----------
     ROOM_FILES = {"face.js": DEVICE_STATIC / "face.js", "panel.js": DEVICE_STATIC / "panel.js",
                   "webagent.js": DEVICE_STATIC / "web" / "webagent.js", "worklet.js": DEVICE_STATIC / "web" / "worklet.js"}
-    room_headers = {"Cache-Control": "no-cache", "Permissions-Policy": "microphone=(self), screen-wake-lock=(self)"}
+    room_headers = {"Cache-Control": "no-cache", "Permissions-Policy": "microphone=(self), screen-wake-lock=(self), accelerometer=(self), gyroscope=(self)"}
 
     @app.get("/room")
     def room() -> HTMLResponse:

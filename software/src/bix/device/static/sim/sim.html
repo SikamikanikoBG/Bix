@@ -57,6 +57,11 @@
     <h2>Радар · присъствие</h2>
     <div class="row"><button id="pIn">Някой влиза</button><button id="pOut">Залата е празна</button></div>
     <div class="state" id="pState">Радар: <b>не е симулиран</b></div>
+    <div style="margin-top:12px">
+      <label for="dist" class="state">Колко близо е най-близкият човек: <b id="distV">—</b></label>
+      <input type="range" id="dist" min="20" max="500" step="10" value="500">
+      <div class="scale"><span>до екрана</span><span>в другия край</span></div>
+    </div>
   </div>
   <div>
     <h2>Микрофон XVF3800</h2>
@@ -67,7 +72,16 @@
       <input type="range" id="doa" min="-80" max="80" value="0">
       <div class="scale"><span>вляво</span><span>срещу екрана</span><span>вдясно</span></div>
     </div>
+    <div style="margin-top:12px">
+      <div class="state">Звуци в залата (идват от посоката на плъзгача)</div>
+      <div class="row" style="margin-top:6px"><button id="knock1">Чук</button><button id="knock2">Чук-чук</button><button id="knock5">Чука упорито</button><button id="bang">Трясък</button></div>
+    </div>
     <p class="state">Звукът идва от микрофона на лаптопа (или от файла в device.toml). Говорете и гледайте светлините отгоре и лицето.</p>
+  </div>
+  <div>
+    <h2>Движение</h2>
+    <div class="row"><button id="shake">Разклати</button><button id="bump">Бутни</button><button id="tiltL">Наклони наляво</button><button id="tiltR">Наклони надясно</button></div>
+    <p class="state">Bix CRT няма датчик за движение: на него удар по корпуса се чува като чукане. Разклащане и наклон работят в браузъра на телефон или таблет (/room).</p>
   </div>
   <div>
     <h2>Само екранът</h2>

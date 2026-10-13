@@ -191,6 +191,19 @@
   $("pOut").onclick = () => post("/api/sim/presence", { present: false });
   $("doa").oninput = () => post("/api/sim/doa", { deg: +$("doa").value });
   post("/api/sim/doa", { deg: 0 });
+  const showDist = () => { const v = +$("dist").value; $("distV").textContent = v >= 500 ? "няма никой" : (v / 100).toFixed(1).replace(".", ",") + " м"; };
+  $("dist").oninput = () => { showDist(); const v = +$("dist").value; post("/api/sim/distance", { cm: v >= 500 ? null : v }); };
+  showDist();
+  $("knock1").onclick = () => post("/api/sim/sound", { kind: "knock", count: 1 });
+  $("knock2").onclick = () => post("/api/sim/sound", { kind: "knock", count: 2 });
+  $("knock5").onclick = () => post("/api/sim/sound", { kind: "knock", count: 5 });
+  $("bang").onclick = () => post("/api/sim/sound", { kind: "bang", count: 1 });
+  // motion: the screen in the 3D model is this same panel; tell its face directly (a phone has a real sensor)
+  const motion = (kind, arg) => { try { const f = frame.contentWindow.bixFace; if (f) f.motion(kind, arg); } catch (e) { /* not loaded yet */ } };
+  $("shake").onclick = () => motion("shake");
+  $("bump").onclick = () => motion("bump");
+  $("tiltL").onclick = () => { motion("tilt", -0.6); setTimeout(() => motion("tilt", 0), 2500); };
+  $("tiltR").onclick = () => { motion("tilt", 0.6); setTimeout(() => motion("tilt", 0), 2500); };
 
   fetch("/api/status").then((r) => r.json()).then((s) => { st = s; showState(); });
   const es = new EventSource("/api/events");
