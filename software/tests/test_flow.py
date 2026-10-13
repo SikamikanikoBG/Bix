@@ -225,6 +225,50 @@ def test_export_with_cyrillic_title(srv, client):
     assert "Обобщение" in r.text
 
 
+def test_minutes_exports_with_and_without_line_numbers(srv, client):
+    """Word, Markdown and the HTML for "Copy"; cite=0 leaves the transcript line numbers out."""
+    import io
+
+    from docx import Document
+
+    from bix.server import minutes
+
+    setup_admin(client)
+    _, token = enroll_device(client)
+    mid = record(client, token)
+    drain(srv)
+    with srv.db.session() as s:
+        m = s.get(Meeting, mid)
+        m.title = "Бюджет Q4"
+        x = minutes.empty_minutes("Бюджетът е одобрен.")
+        x["decisions"] = [{"text": "Одобряваме бюджета", "refs": [3, 7]}]
+        x["action_items"] = [{"task": "Да пусне поръчката", "owner": "Мария", "due": "петък", "refs": [9]}]
+        x["topics"] = [{"title": "Сайт", "summary": "Нов дизайн", "refs": [12]}]
+        m.minutes = x
+
+    r = client.get(f"/api/meetings/{mid}/export.docx")
+    assert r.status_code == 200, r.text
+    assert r.headers["content-type"].startswith("application/vnd.openxmlformats")
+    doc = Document(io.BytesIO(r.content))
+    text = "\n".join(p.text for p in doc.paragraphs)
+    assert "Бюджет Q4" in text and "Одобряваме бюджета" in text and "редове 3, 7" in text
+    table = doc.tables[0]
+    assert [c.text for c in table.rows[1].cells] == ["Да пусне поръчката", "Мария", "петък", "9"]
+
+    doc = Document(io.BytesIO(client.get(f"/api/meetings/{mid}/export.docx?cite=0").content))
+    text = "\n".join(p.text for p in doc.paragraphs)
+    assert "Одобряваме бюджета" in text and "редове" not in text
+    assert len(doc.tables[0].columns) == 3
+
+    md = client.get(f"/api/meetings/{mid}/export.md?cite=0").text
+    assert "Одобряваме бюджета" in md and "редове" not in md and "препратка" not in md
+    assert "редове 3, 7" in client.get(f"/api/meetings/{mid}/export.md").text
+    html = client.get(f"/api/meetings/{mid}/export.html?cite=0").text
+    assert "Нов дизайн" in html and "#L12" not in html
+    assert "#L12" in client.get(f"/api/meetings/{mid}/export.html").text
+    assert client.get(f"/api/meetings/{mid}/export.pdf").status_code == 404
+
+
 def test_remember_voice_creates_profile(srv, client):
     """Regression: 'remember voice' for a new person crashed (500)."""
     import json as _json

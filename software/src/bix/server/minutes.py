@@ -436,20 +436,29 @@ L10N = {
         "summary": "Обобщение", "decisions": "Решения", "actions": "Задачи", "questions": "Отворени въпроси",
         "topics": "Теми", "owner": "Отговорник", "due": "Срок", "participants": "Участници", "room": "Зала",
         "date": "Дата", "duration": "Продължителност", "none": "Няма", "lines": "редове", "open": "Отворете в Bix",
-        "generated": "Минутите са направени автоматично от Bix (ИИ) и може да съдържат грешки. Всяко твърдение има препратка към ред от транскрипцията.",
+        "task": "Задача",
+        "generated": "Минутите са направени автоматично от Bix (ИИ) и може да съдържат грешки.",
+        "cited": "Всяко твърдение има препратка към ред от транскрипцията.",
     },
     "en": {
         "summary": "Summary", "decisions": "Decisions", "actions": "Action items", "questions": "Open questions",
         "topics": "Topics", "owner": "Owner", "due": "Due", "participants": "Participants", "room": "Room",
         "date": "Date", "duration": "Duration", "none": "None", "lines": "lines", "open": "Open in Bix",
-        "generated": "These minutes were generated automatically by Bix (AI) and may contain errors. Every item cites transcript lines.",
+        "task": "Task",
+        "generated": "These minutes were generated automatically by Bix (AI) and may contain errors.",
+        "cited": "Every item cites transcript lines.",
     },
 }
 
 
-def render_markdown(m: dict[str, Any], meta: dict[str, Any], language: str = "bg") -> str:
+def footnote(t: dict[str, str], cite: bool) -> str:
+    return f"{t['generated']} {t['cited']}" if cite else t["generated"]
+
+
+def render_markdown(m: dict[str, Any], meta: dict[str, Any], language: str = "bg", cite: bool = True) -> str:
+    """cite=False leaves out the transcript line numbers (a cleaner copy to forward)."""
     t = L10N.get(language, L10N["en"])
-    r = lambda refs: f" _({t['lines']} {', '.join(map(str, refs))})_" if refs else ""  # noqa: E731
+    r = lambda rs: f" _({t['lines']} {', '.join(map(str, rs))})_" if rs and cite else ""  # noqa: E731
     out = [f"# {meta.get('title') or m.get('title')}", ""]
     facts = [f"**{t['date']}:** {meta.get('date', '')}", f"**{t['duration']}:** {meta.get('duration', '')}"]
     if meta.get("room"):
@@ -475,19 +484,19 @@ def render_markdown(m: dict[str, Any], meta: dict[str, Any], language: str = "bg
         out += ["", f"## {t['topics']}", ""]
         for tp in m["topics"]:
             out.append(f"- **{tp['title']}**: {tp['summary']}{r(tp['refs'])}")
-    out += ["", "---", f"_{t['generated']}_"]
+    out += ["", "---", f"_{footnote(t, cite)}_"]
     if meta.get("url"):
         out.append(f"[{t['open']}]({meta['url']})")
     return "\n".join(out) + "\n"
 
 
-def render_html(m: dict[str, Any], meta: dict[str, Any], language: str = "bg") -> str:
-    """E-mail friendly HTML (inline styles, no scripts)."""
+def render_html(m: dict[str, Any], meta: dict[str, Any], language: str = "bg", cite: bool = True) -> str:
+    """E-mail friendly HTML (inline styles, no scripts); also what "Copy" puts on the clipboard."""
     t = L10N.get(language, L10N["en"])
     url = meta.get("url", "")
 
     def refs(rs: list[int]) -> str:
-        if not rs:
+        if not rs or not cite:
             return ""
         links = ", ".join(f'<a href="{escape(url)}#L{n}" style="color:#6b7280">{n}</a>' if url else str(n) for n in rs)
         return f' <span style="color:#6b7280;font-size:12px">({t["lines"]} {links})</span>'
@@ -515,7 +524,9 @@ def render_html(m: dict[str, Any], meta: dict[str, Any], language: str = "bg") -
     parts.append(section(t["decisions"], [escape(d["text"]) + refs(d["refs"]) for d in m["decisions"]]))
     parts.append(section(t["actions"], actions))
     parts.append(section(t["questions"], [escape(q["text"]) + refs(q["refs"]) for q in m["open_questions"]]))
+    if m.get("topics"):
+        parts.append(section(t["topics"], [f"<b>{escape(tp['title'])}</b>: {escape(tp['summary'])}" + refs(tp["refs"]) for tp in m["topics"]]))
     if url:
         parts.append(f'<p style="margin-top:20px"><a href="{escape(url)}" style="color:#2563eb">{t["open"]}</a></p>')
-    parts.append(f'<p style="color:#9ca3af;font-size:12px;margin-top:24px">{escape(t["generated"])}</p></div>')
+    parts.append(f'<p style="color:#9ca3af;font-size:12px;margin-top:24px">{escape(footnote(t, cite))}</p></div>')
     return "".join(parts)

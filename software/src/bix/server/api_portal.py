@@ -15,7 +15,7 @@ from sqlalchemy import func, or_, select
 
 from bix.common import audio as au
 from bix.common.settings import redacted
-from bix.server import pipeline, speakers as spk
+from bix.server import minutes as minutes_mod, pipeline, speakers as spk
 from bix.server.auth import (
     Principal,
     admin_only,
@@ -203,22 +203,44 @@ def get_audio(mid: str, request: Request, p: Principal = Depends(content_reader)
     return Response(srv.storage.get(k), media_type="audio/ogg")
 
 
-@router.get("/meetings/{mid}/export.md")
-def export_md(mid: str, request: Request, p: Principal = Depends(content_reader)) -> Response:
+EXPORTS = {
+    "md": "text/markdown; charset=utf-8",
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "html": "text/html; charset=utf-8",
+}
+
+
+@router.get("/meetings/{mid}/export.{fmt}")
+def export_minutes(mid: str, fmt: str, request: Request, cite: bool = True, p: Principal = Depends(content_reader)) -> Response:
+    """The minutes as .md, Word (.docx) or HTML (what "Copy" puts on the clipboard).
+    cite=false leaves out the transcript line numbers."""
+    if fmt not in EXPORTS:
+        raise HTTPException(404)
     srv = srv_of(request)
     with srv.db.session() as s:
         m = _meeting_for(s, p, mid)
-        audit(s, p.actor, "meeting.export", target=mid, org_id=p.org_id, ip=client_ip(request))
-        org_id, title = m.org_id, m.title
-    k = key(org_id, mid, "minutes.md")
-    if not srv.storage.exists(k):
-        raise HTTPException(404, "Няма минути.")
+        if not m.minutes:
+            raise HTTPException(404, "Няма минути.")
+        room = s.get(Room, m.room_id) if m.room_id else None
+        meta = pipeline.meeting_meta(srv, m, room)
+        language = s.get(Org, m.org_id).setting("language")
+        minutes, title = m.minutes, m.title
+        audit(s, p.actor, "meeting.export", target=mid, org_id=p.org_id, ip=client_ip(request), format=fmt, cite=cite)
+    if fmt == "md":
+        body: bytes = minutes_mod.render_markdown(minutes, meta, language, cite=cite).encode()
+    elif fmt == "html":
+        body = minutes_mod.render_html(minutes, meta, language, cite=cite).encode()
+        return Response(body, media_type=EXPORTS[fmt], headers={"Cache-Control": "no-store"})
+    else:
+        from bix.server.minutes_docx import render_docx
+
+        body = render_docx(minutes, meta, language, cite=cite)
     from urllib.parse import quote
 
-    fname = (re.sub(r"[^\w\-]+", "_", title).strip("_")[:60] or "minutes") + ".md"
+    fname = (re.sub(r"[^\w\-]+", "_", title).strip("_")[:60] or "minutes") + "." + fmt
     # HTTP headers are Latin-1: ASCII fallback + RFC 5987 UTF-8 name for Cyrillic titles.
-    disposition = f"attachment; filename=\"minutes.md\"; filename*=UTF-8''{quote(fname)}"
-    return Response(srv.storage.get(k), media_type="text/markdown; charset=utf-8", headers={"Content-Disposition": disposition})
+    disposition = f"attachment; filename=\"minutes.{fmt}\"; filename*=UTF-8''{quote(fname)}"
+    return Response(body, media_type=EXPORTS[fmt], headers={"Content-Disposition": disposition})
 
 
 class MeetingPatch(BaseModel):
@@ -329,6 +351,7 @@ def reprocess(mid: str, body: ReprocessIn, request: Request, p: Principal = Depe
 
 class SendIn(BaseModel):
     to: list[str] = Field(default_factory=list)
+    cite: bool = True  # transcript line numbers in the e-mail
 
 
 @router.post("/meetings/{mid}/send")
@@ -340,7 +363,7 @@ def send(mid: str, body: SendIn, request: Request, p: Principal = Depends(conten
             raise HTTPException(409, "Няма минути за изпращане.")
     to = clean_emails(body.to, "получатели")
     try:
-        return pipeline.send_minutes(srv, mid, actor=p.actor, to=to or None)
+        return pipeline.send_minutes(srv, mid, actor=p.actor, to=to or None, cite=body.cite)
     except Exception as e:
         raise HTTPException(502, str(e)) from e
 

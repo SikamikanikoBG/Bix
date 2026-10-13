@@ -214,7 +214,7 @@ async function pageMeeting(id) {
     <div class="row spread"><div><a href="#/meetings" class="muted small">← Срещи</a>
       <h1 id="title" title="Кликнете за редакция" style="cursor:text">${esc(m.title)}</h1></div>
       <div class="row">
-        ${m.minutes ? `<button id="send">Изпрати</button><a class="btn" href="/api/meetings/${id}/export.md">Свали .md</a>` : ""}
+        ${m.minutes ? `<button id="send">Изпрати</button>` : ""}
         <button id="more">Още…</button></div></div>
     <div class="row muted">${statusBadge(m.status)} <span>${esc(m.room || "")}</span><span>${fmtDate(m.started_at)}</span><span>${fmtTs(m.duration_s)}</span>
       ${m.sent_to.length ? `<span>Изпратено до ${esc(m.sent_to.join(", "))}</span>` : ""}</div>
@@ -258,17 +258,57 @@ function refsHtml(refs) {
   return ` <span class="refs">(${refs.map((n) => `<a href="#" data-ref="${n}">${n}</a>`).join(", ")})</span>`;
 }
 
+// Transcript line numbers next to each item: on by default; the reader's choice is remembered
+// and goes into the copy, the downloads and the e-mail.
+const CITE_KEY = "bix_cite";
+function citeOn() { try { return localStorage.getItem(CITE_KEY) !== "0"; } catch { return true; } }
+function setCite(on) { try { localStorage.setItem(CITE_KEY, on ? "1" : "0"); } catch {} }
+
+function minutesToolbar(id) {
+  const q = citeOn() ? "" : "?cite=0";
+  return `<div class="mtools row spread">
+    <div class="row">
+      <button id="copyMin" title="Форматирано: поставя се добре в Outlook, Word и Teams">Копирай</button>
+      <a class="btn" id="dlDocx" href="/api/meetings/${id}/export.docx${q}">Свали Word</a>
+      <a class="btn" id="dlMd" href="/api/meetings/${id}/export.md${q}">Свали .md</a>
+    </div>
+    <label class="switch"><input type="checkbox" id="citeT" ${citeOn() ? "checked" : ""}><span class="track" aria-hidden="true"></span> Номера на редовете</label>
+  </div>`;
+}
+
+async function copyMinutes(id) {
+  const q = `?cite=${citeOn() ? 1 : 0}`;
+  const get = (fmt, type) => fetch(`/api/meetings/${id}/export.${fmt}${q}`, { credentials: "same-origin" })
+    .then((r) => { if (!r.ok) throw new Error("Минутите не можаха да се заредят."); return r.blob(); })
+    .then((b) => new Blob([b], { type }));
+  if (navigator.clipboard && window.ClipboardItem) {
+    // rich HTML for Outlook/Word/Teams, plain Markdown for everything else
+    await navigator.clipboard.write([new ClipboardItem({ "text/html": get("html", "text/html"), "text/plain": get("md", "text/plain") })]);
+    return;
+  }
+  // older browsers or plain http: select a rendered copy and copy that
+  const box = document.createElement("div");
+  box.innerHTML = await (await get("html", "text/html")).text();
+  Object.assign(box.style, { position: "fixed", left: "-10000px", top: "0" });
+  document.body.append(box);
+  const range = document.createRange(); range.selectNodeContents(box);
+  const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range);
+  const ok = document.execCommand("copy");
+  sel.removeAllRanges(); box.remove();
+  if (!ok) throw new Error("Браузърът не позволи копиране.");
+}
+
 function renderMinutes(m, busy) {
   const x = m.minutes;
   if (!x) return `<div class="card empty">${busy ? "Минутите се подготвят. Страницата ще се обнови сама." : "Няма минути за тази среща."}</div>`;
   const list = (items, f) => items.length ? `<ul>${items.map(f).join("")}</ul>` : `<p class="muted">Няма</p>`;
-  return `<div class="card minutes">
+  return minutesToolbar(m.id) + `<div class="card minutes${citeOn() ? "" : " nocite"}">
     <h3>Обобщение</h3><p>${esc(x.summary || "—")}</p>
     <h3>Решения</h3>${list(x.decisions, (d) => `<li>${esc(d.text)}${refsHtml(d.refs)}</li>`)}
     <h3>Задачи</h3>${list(x.action_items, (a) => `<li>${esc(a.task)}${a.owner ? ` — <b>${esc(a.owner)}</b>` : ""}${a.due ? ` <span class="badge">${esc(a.due)}</span>` : ""}${refsHtml(a.refs)}</li>`)}
     <h3>Отворени въпроси</h3>${list(x.open_questions, (q) => `<li>${esc(q.text)}${refsHtml(q.refs)}</li>`)}
     ${x.topics && x.topics.length ? `<h3>Теми</h3>${list(x.topics, (t) => `<li><b>${esc(t.title)}</b>: ${esc(t.summary)}${refsHtml(t.refs)}</li>`)}` : ""}
-    <p class="muted small">Направено автоматично от ИИ. Проверете важните неща в транскрипцията по номерата на редовете.</p></div>`;
+    <p class="muted small">Направено автоматично от ИИ.<span class="refs-note"> Проверете важните неща в транскрипцията по номерата на редовете.</span></p></div>`;
 }
 
 function renderTranscript(tr, names, busy) {
@@ -331,6 +371,19 @@ function playSpan(start, end) {
 }
 
 function bindMeetingTab(id, m) {
+  const cite = $("#citeT");
+  if (cite) cite.addEventListener("change", () => {
+    setCite(cite.checked);
+    $(".minutes").classList.toggle("nocite", !cite.checked);
+    const q = cite.checked ? "" : "?cite=0";
+    $("#dlDocx").href = `/api/meetings/${id}/export.docx${q}`;
+    $("#dlMd").href = `/api/meetings/${id}/export.md${q}`;
+  });
+  const copy = $("#copyMin");
+  if (copy) copy.addEventListener("click", guard(async () => {
+    await copyMinutes(id);
+    toast(citeOn() ? "Минутите са копирани." : "Минутите са копирани, без номерата на редовете.");
+  }));
   document.querySelectorAll("[data-seek]").forEach((el) => el.addEventListener("click", () => {
     const a = $("#audio"); if (!a) return; a.currentTime = parseFloat(el.dataset.seek); a.play();
   }));
@@ -367,11 +420,13 @@ function jumpToLine(n) {
 function sendDialog(id) {
   modal(`<h2>Изпрати минутите</h2><p class="muted">Празно = на получателите по правилата (организатор, участници, зала).</p>
     <form id="sf"><label class="f">Допълнителни имейли (със запетая)<input name="to" placeholder="ime@firma.bg, ..."></label>
+    <label class="switch" style="margin:4px 0 14px"><input type="checkbox" name="cite" ${citeOn() ? "checked" : ""}><span class="track" aria-hidden="true"></span> С номерата на редовете от транскрипцията</label>
     <div class="row"><button class="primary">Изпрати</button><button type="button" data-close>Отказ</button></div></form>`, (m, close) => {
     $("#sf", m).addEventListener("submit", guard(async (e) => {
       e.preventDefault();
-      const to = (new FormData(e.target).get("to") || "").split(/[,;\s]+/).filter(Boolean);
-      const r = await api(`/api/meetings/${id}/send`, { method: "POST", body: { to } });
+      const fd = new FormData(e.target);
+      const to = (fd.get("to") || "").split(/[,;\s]+/).filter(Boolean);
+      const r = await api(`/api/meetings/${id}/send`, { method: "POST", body: { to, cite: fd.get("cite") === "on" } });
       close(); toast(`Изпратено до ${r.sent_to.join(", ")}`); pageMeeting(id);
     }));
   });

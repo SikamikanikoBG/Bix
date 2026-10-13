@@ -358,7 +358,9 @@ def meeting_meta(srv: Server, m: Meeting, room: Room | None) -> dict[str, Any]:
     }
 
 
-def _render(srv: Server, mid: str) -> tuple[str, str]:
+def _render(srv: Server, mid: str, cite: bool = True) -> tuple[str, str]:
+    """Minutes as Markdown and e-mail HTML. The stored copy always cites transcript lines;
+    cite=False (sending without line numbers) renders without storing."""
     with srv.db.session() as s:
         m = s.get(Meeting, mid)
         org = s.get(Org, m.org_id)
@@ -367,8 +369,10 @@ def _render(srv: Server, mid: str) -> tuple[str, str]:
         language = org.setting("language")
         minutes = m.minutes or minutes_mod.empty_minutes("")
         org_id = m.org_id
-    md = minutes_mod.render_markdown(minutes, meta, language)
-    html = minutes_mod.render_html(minutes, meta, language)
+    md = minutes_mod.render_markdown(minutes, meta, language, cite=cite)
+    html = minutes_mod.render_html(minutes, meta, language, cite=cite)
+    if not cite:
+        return md, html
     srv.storage.put(key(org_id, mid, "minutes.md"), md.encode(), "text/markdown")
     srv.storage.put(key(org_id, mid, "minutes.html"), html.encode(), "text/html")
     return md, html
@@ -403,8 +407,8 @@ def recipients(s, m: Meeting, org: Org) -> list[str]:
     return uniq
 
 
-def send_minutes(srv: Server, mid: str, actor: str, to: list[str] | None = None) -> dict[str, Any]:
-    md, html = _render(srv, mid)
+def send_minutes(srv: Server, mid: str, actor: str, to: list[str] | None = None, cite: bool = True) -> dict[str, Any]:
+    md, html = _render(srv, mid, cite=cite)
     with srv.db.session() as s:
         m = s.get(Meeting, mid)
         org = s.get(Org, m.org_id)

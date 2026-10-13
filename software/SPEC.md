@@ -43,6 +43,7 @@
 | | Дума за събуждане „Бикс“ (openWakeWord) | частично (кукичката е готова, модел няма) |
 | | Екранът в залата за 7" дисплея (1280 × 720, тъч): календар, старт по резервация, „Попитай Bix“, ⭐, броячи, край с получателите | готово |
 | | Лице с характер (9 вида, по подразбиране LED матрица), гледа към говорещия по DoA | готово |
+| | Лицето усеща: допир (око, гъдел, галене, плъзване, задържане, щипване), чукане по корпуса и трясък (само сила и посока на звука, нищо не се пази), радар (приближава се, много близо, сбогуване), разклащане и наклон в браузъра на телефон/таблет; по време на среща е спокойно | готово (на симулатора; чукането чака проба на истинския корпус) |
 | | На Pi: екранът в Chromium киоск (cage), `install-device.sh --screen`; старото SDL2 лице остава като `--face` | готово (не е пускано на Pi) |
 | | Виртуално устройство `/sim`: 3D корпус с истинския екран, радар, Mute, светлини | готово |
 | Сървър | Device API: регистрация, heartbeat с политики и команди, качване (идемпотентно), край, отказ | готово |
@@ -54,6 +55,7 @@
 | | Имена от разговора (езиковият модел дава имена с обосновка, само когато е ясно) | готово |
 | | Посоката (DoA) като помощ при разделянето | предстои |
 | | Минути: решения, задачи (отговорник, срок), отворени въпроси, теми, всяко с препратки | готово |
+| | Минутите от портала: „Копирай“ (форматирано за Outlook, Word, Teams), Word (.docx), .md; превключвател за номерата на редовете (екран, копие, файлове, имейл) | готово |
 | | Езиков модел: Claude API (резерв при отказ), Bedrock EU, vLLM, Claude Code CLI | готово (Bedrock не е тестван) |
 | | Текст на живо (откъсите → реч → панела) | готово |
 | | Календар на залата: резервации в портала (и седмични), iCal адрес (Google Calendar, Outlook), Microsoft Graph; дневен ред на устройството | готово (iCal и Graph не са тествани с реален календар) |
@@ -105,7 +107,7 @@
 **Устройство** (Bearer токен; mTLS по избор):
 `POST /api/device/enroll` · `POST /api/device/heartbeat` · `POST /api/device/meetings` · `PUT /api/device/meetings/{id}/chunks/{seq}?start_s&duration_s` (FLAC) · `POST …/end` · `POST …/discard` · `GET …/live?after=`
 
-**Портал** (сесия + заглавка `X-Bix: 1`): `/auth/*`, `/api/overview`, `/api/meetings[/{id}[/transcript|/audio|/export.md|/speakers|/reprocess|/send]]`, `/api/meetings/upload`, `/api/rooms`, `/api/devices[/enrollment-codes|/{id}/command|/{id}/revoke]`, `/api/people[/{id}/voice]`, `/api/users`, `/api/settings`, `/api/status`, `/api/audit`, `/api/jobs`, `/api/events` (SSE).
+**Портал** (сесия + заглавка `X-Bix: 1`): `/auth/*`, `/api/overview`, `/api/meetings[/{id}[/transcript|/audio|/export.{md,docx,html}?cite=0|1|/speakers|/reprocess|/send]]`, `/api/meetings/upload`, `/api/rooms`, `/api/devices[/enrollment-codes|/{id}/command|/{id}/revoke]`, `/api/people[/{id}/voice]`, `/api/users`, `/api/settings`, `/api/status`, `/api/audit`, `/api/jobs`, `/api/events` (SSE).
 
 ## 6. Сигурност
 
